@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Results{% endblock %}
+{% block body %}
+<p class="muted">Session #{{ session.id }} · {{ session.student_id }}</p>
+
+{% if final_grade %}
+<div class="card">
+  <h2>Overall grade</h2>
+  <p class="score">{{ "%.1f"|format(final_grade.total_grade_percent) }}%</p>
+  <div class="explain">{{ final_grade.explanation }}</div>
+</div>
+{% endif %}
+
+{% for q in questions %}
+<div class="card">
+  <h2>Question {{ q.question_index + 1 }}</h2>
+  <p class="muted">Prompt</p>
+  <p>{{ q.essay_question }}</p>
+  <p class="muted">Your response</p>
+  <div class="explain">{{ q.student_response or "—" }}</div>
+  {% if q.graded_state_p_json %}
+    {% set g = q.graded_state_p_json | fromjson %}
+    <p class="muted">Grading</p>
+    <p><strong>{{ "%.1f"|format(g.overall_percent | default(0) | float) }}%</strong>
+      {% if g.highly_satisfactory %} · marked highly satisfactory{% endif %}
+    </p>
+    <div class="explain">{{ g.explanation }}</div>
+  {% endif %}
+</div>
+{% endfor %}
+
+<p><a href="/">Start another exam</a></p>
+{% endblock %}

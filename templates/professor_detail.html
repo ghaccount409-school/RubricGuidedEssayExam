@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Exam {{ session.id }}{% endblock %}
+{% block header_title %}Exam detail{% endblock %}
+{% block body %}
+<p class="muted">
+  Session <strong>{{ session.id }}</strong> · {{ session.student_id }} · {{ session.status }}
+</p>
+
+<div class="card">
+  <h2>Domain guidance used</h2>
+  <div class="explain">{{ session.professor_domain }}</div>
+</div>
+
+{% if final_grade %}
+<div class="card">
+  <h2>Final grade</h2>
+  <p class="score">{{ "%.1f"|format(final_grade.total_grade_percent) }}%</p>
+  <div class="explain">{{ final_grade.explanation }}</div>
+</div>
+{% endif %}
+
+{% for item in items %}
+<div class="card">
+  <h2>Question {{ item.row.question_index + 1 }}</h2>
+  <p class="muted">Background</p>
+  <div class="explain">{{ item.row.background_information }}</div>
+  <p class="muted">Question</p>
+  <p>{{ item.row.essay_question }}</p>
+  <p class="muted">Rubric</p>
+  {% if item.rubric is string %}
+    <div class="explain">{{ item.rubric }}</div>
+  {% else %}
+    <ul class="rubric">
+      {% for c in item.rubric %}
+        <li>{{ c }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  <p class="muted">Student answer</p>
+  <div class="explain">{{ item.row.student_response or "—" }}</div>
+  {% if item.grade %}
+  <p class="muted">LLM grading (state P)</p>
+  <p><strong>{{ "%.1f"|format(item.grade.overall_percent | default(0) | float) }}%</strong></p>
+  <div class="explain">{{ item.grade.explanation }}</div>
+  {% endif %}
+</div>
+{% endfor %}
+
+<p><a href="/professor">← All sessions</a></p>
+{% endblock %}

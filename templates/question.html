@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Question {{ question_number }}{% endblock %}
+{% block body %}
+<p class="muted">Question {{ question_number }} of {{ total_planned }} · Student <span class="badge">{{ session.student_id }}</span></p>
+
+<div class="card">
+  <h2>Background</h2>
+  <div class="explain">{{ question.background_information }}</div>
+</div>
+
+<div class="card">
+  <h2>Essay question</h2>
+  <p>{{ question.essay_question }}</p>
+  <div class="rubric muted">
+    <strong>Rubric</strong>
+    {% if rubric_display is string %}
+      <p>{{ rubric_display }}</p>
+    {% else %}
+      <ul>
+        {% for c in rubric_display %}
+          <li>{{ c }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </div>
+</div>
+
+<form class="card" method="post" action="/exam/{{ session.id }}/answer">
+  <h2>Your answer</h2>
+  <div class="row">
+    <label for="answer">Essay response</label>
+    <textarea id="answer" name="answer" required placeholder="Type your answer here."></textarea>
+  </div>
+  <div class="row">
+    <label for="seconds_on_question">Seconds spent (optional)</label>
+    <input type="text" id="seconds_on_question" name="seconds_on_question" placeholder="e.g. 420">
+  </div>
+  <button type="submit">Submit and continue</button>
+</form>
+{% endblock %}

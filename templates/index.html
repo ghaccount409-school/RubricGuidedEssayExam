@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Start exam{% endblock %}
+{% block body %}
+<p class="muted">Enter a student identifier and domain guidance for the LLM (topic, level, constraints — not copy-paste exam questions).</p>
+
+<form class="card" method="post" action="/exam/start">
+  <h2>Start session</h2>
+  <div class="row">
+    <label for="student_id">Student ID</label>
+    <input type="text" id="student_id" name="student_id" required placeholder="e.g. student_001">
+  </div>
+  <div class="row">
+    <label for="professor_domain">Professor domain / constraints</label>
+    <textarea id="professor_domain" name="professor_domain" required
+      placeholder="e.g. Second-year data structures: hash tables, collision resolution, load factor. Emphasize conceptual understanding, not code dumps."></textarea>
+  </div>
+  <div class="row">
+    <label for="num_questions">Number of essay questions</label>
+    <input type="number" id="num_questions" name="num_questions" min="1" max="20" value="1">
+  </div>
+  <button type="submit">Generate first question</button>
+</form>
+
+<p class="muted">For testing without Together.ai, set <code>MOCK_LLM=1</code> in a <code>.env</code> file next to <code>requirements.txt</code>.</p>
+{% endblock %}
