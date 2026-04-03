@@ -29,17 +29,155 @@ A web app for **adaptive, oral-style exams**: students get essay questions tailo
 - Python 3.x · **FastAPI** · **Jinja2** · **SQLAlchemy** (SQLite by default)
 - **Together AI** chat completions when not in mock mode (`TOGETHER_API_KEY`, model configurable)
 
-## Quick start
+## Prerequisites
+
+- **Python 3.11+** (3.12 or 3.14 is fine). Check with `python3 --version` (Mac/Linux) or `py -3 --version` / `python --version` (Windows).
+- **Git** (to clone the repository).
+
+## How to run the app
+
+The server listens on **http://127.0.0.1:8000** by default.
+
+| Page | URL |
+|------|-----|
+| Student / home | [http://127.0.0.1:8000/](http://127.0.0.1:8000/) |
+| Professor dashboard | [http://127.0.0.1:8000/professor](http://127.0.0.1:8000/professor) |
+| API docs (Swagger) | [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) |
+
+### macOS
+
+1. Open **Terminal** and go to the project folder (replace the path with where you cloned the repo):
+
+   ```bash
+   cd /path/to/RubricGuidedEssayExam
+   ```
+
+2. Create a virtual environment and activate it:
+
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   ```
+
+3. Install dependencies:
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. Configure environment variables (optional but recommended):
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   Edit `.env` in a text editor:
+
+   - **`MOCK_LLM=1`** — uses built-in mock questions and grades (no API key; best for local demos and development).  
+   - **`MOCK_LLM=0`** and a valid **`TOGETHER_API_KEY`** — uses the [Together.ai](https://api.together.xyz/) API for real LLM calls.
+
+5. Start the development server (pick one):
+
+   **Option A — helper script** (sets `MOCK_LLM` to `1` by default if unset, then runs Uvicorn):
+
+   ```bash
+   chmod +x run_dev.sh
+   ./run_dev.sh
+   ```
+
+   **Option B — manual** (activate `.venv` first, then):
+
+   ```bash
+   export MOCK_LLM=1
+   uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+   ```
+
+6. Leave Terminal open while you use the app. Press **Ctrl+C** to stop the server.
+
+### Windows
+
+1. Open **Command Prompt** or **PowerShell** and go to the project folder:
+
+   ```bat
+   cd C:\path\to\RubricGuidedEssayExam
+   ```
+
+2. Create a virtual environment:
+
+   ```bat
+   py -3 -m venv .venv
+   ```
+
+   If `py` is not available, try `python -m venv .venv` instead.
+
+3. **Activate** the virtual environment:
+
+   - **Command Prompt:**
+
+     ```bat
+     .venv\Scripts\activate.bat
+     ```
+
+   - **PowerShell:**
+
+     ```powershell
+     .venv\Scripts\Activate.ps1
+     ```
+
+     If PowerShell blocks scripts, run once as Administrator:  
+     `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`
+
+4. Install dependencies:
+
+   ```bat
+   pip install -r requirements.txt
+   ```
+
+5. Create your `.env` file from the example:
+
+   - **Command Prompt:**
+
+     ```bat
+     copy .env.example .env
+     ```
+
+   - **PowerShell:**
+
+     ```powershell
+     Copy-Item .env.example .env
+     ```
+
+   Edit `.env` with Notepad or your editor: set **`MOCK_LLM=1`** for mock mode, or **`MOCK_LLM=0`** and **`TOGETHER_API_KEY=...`** for live Together.ai calls.
+
+6. Start the server (with the virtual environment **still activated**):
+
+   **Command Prompt:**
+
+   ```bat
+   set MOCK_LLM=1
+   python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+   ```
+
+   **PowerShell:**
+
+   ```powershell
+   $env:MOCK_LLM = "1"
+   python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+   ```
+
+   (`run_dev.sh` is for Unix shells; on Windows use the commands above.)
+
+7. Press **Ctrl+C** in the terminal to stop the server.
+
+### Run automated tests (optional)
+
+With the virtual environment activated and dependencies installed (including `pytest` from `requirements.txt`):
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-cp .env.example .env        # set TOGETHER_API_KEY or rely on mock mode
-./run_dev.sh                # or: uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+python -m pytest tests/ -v
 ```
 
-Open [http://127.0.0.1:8000](http://127.0.0.1:8000) for the student flow; `/professor` for the instructor list.
+Mock LLM and an isolated test database are configured automatically for tests.
 
 ## License
 
