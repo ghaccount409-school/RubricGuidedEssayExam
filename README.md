@@ -1,4 +1,4 @@
-# RGEE — Modular Oral-Style Exam System
+# RubricGuidedEssayExam (RGEE) — Modular Oral-Style Exam System
 
 A web app for **adaptive, oral-style exams**: students get essay questions tailored to a professor-provided domain, submit answers (optionally with time-on-question), and receive **LLM-assisted grading** against a structured rubric. Sessions and results are stored locally; instructors can review attempts from a simple dashboard.
 
