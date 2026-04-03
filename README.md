@@ -2,6 +2,20 @@
 
 A web app for **adaptive, oral-style exams**: students get essay questions tailored to a professor-provided domain, submit answers (optionally with time-on-question), and receive **LLM-assisted grading** against a structured rubric. Sessions and results are stored locally; instructors can review attempts from a simple dashboard.
 
+## Team — GREEN
+
+- WL: Anis, Sahrish
+- Byrnes, Nikola
+- Dang, Kenny
+- Gervacio, Angeles
+- Lopez, Angela
+- Maloney, Nigel
+- Mui, Ethan
+- WL: Prljic, Vojislav
+- Reyna, Rodolfo
+- Sanchez, Ricardo
+- Tavassoli, Armin
+
 ## Features
 
 - **Multi-question exams** (1–20 questions per session) with context carried across questions
