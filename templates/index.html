@@ -63,6 +63,7 @@
         <strong>Mock only:</strong> add <code>TOGETHER_API_KEY</code> to the server <code>.env</code> to enable Production (live Together.ai calls).
         {% else %}
         <strong>Mock</strong> uses fixed demo questions and scores (no API usage). <strong>Production</strong> calls Together.ai using the server API key.
+        Production uses one call to create the first question, then <strong>one combined call per answer</strong> (grade + next question, or grade + final summary)—fewer round trips than separate grade and generate calls.
         {% endif %}
       </span>
     </div>

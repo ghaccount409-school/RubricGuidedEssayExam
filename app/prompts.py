@@ -29,6 +29,12 @@ The JSON must be parseable by Python json.loads.
 
 GRADE_RESPONSE_TEMPLATE = """You grade one essay exam answer using the rubric and background provided.
 
+TARGET EDUCATION LEVEL (grade against expectations for this audience):
+---
+Level: {education_level_label}
+Guidance: {education_level_guidance}
+---
+
 BACKGROUND SHOWN TO STUDENT:
 ---
 {background_information}
@@ -56,6 +62,95 @@ Respond with ONLY valid JSON (no markdown fences). Keys:
 - "dimension_scores": object with numeric 0-100 keys e.g. "rubric_alignment", "completeness", "clarity"
 - "overall_percent": number 0-100
 - "explanation": string, detailed justification referencing the rubric and student text
+
+The JSON must be parseable by Python json.loads.
+"""
+
+# One API call instead of grade_answer + generate_question (saves credits)
+COMBINED_GRADE_AND_NEXT_QUESTION_TEMPLATE = """You do TWO things in one response: (1) grade the student's answer to the CURRENT question, (2) write the NEXT exam question for the same session.
+
+TARGET EDUCATION LEVEL:
+---
+Level: {education_level_label}
+Guidance: {education_level_guidance}
+---
+
+PROFESSOR DOMAIN / CONSTRAINTS (for generating the next question):
+---
+{professor_domain}
+---
+
+Prior questions in this session (avoid near-duplicates for the next question):
+---
+{prior_questions_summary}
+---
+
+CURRENT QUESTION — grade this answer only:
+Background:
+---
+{background_information}
+---
+Essay prompt:
+---
+{essay_question}
+---
+Rubric:
+---
+{grading_rubric}
+---
+Student response:
+---
+{student_response}
+---
+Time on question (seconds): {seconds_on_question}
+
+NEXT question index (0-based): {next_question_index}
+
+Respond with ONLY valid JSON (no markdown fences). Top-level keys MUST be exactly:
+- "grading": object with keys "highly_satisfactory" (boolean), "dimension_scores" (object, 0-100), "overall_percent" (number 0-100), "explanation" (string)
+- "next_question": object with keys "background_information", "essay_question", "grading_rubric" (array of strings), "domain_notes" (string)
+
+The JSON must be parseable by Python json.loads.
+"""
+
+# One API call instead of grade_answer + final_grade on the last question (saves credits)
+COMBINED_GRADE_AND_FINAL_TEMPLATE = """You do TWO things in one response: (1) grade the student's answer to the LAST question of this exam, (2) produce ONE overall exam grade using all questions.
+
+TARGET EDUCATION LEVEL:
+---
+Level: {education_level_label}
+Guidance: {education_level_guidance}
+---
+
+QUESTIONS ALREADY COMPLETED AND GRADED (use for the final summary):
+---
+{earlier_questions_graded_blob}
+---
+
+LAST QUESTION — grade this answer (not yet graded):
+Background:
+---
+{background_information}
+---
+Essay prompt:
+---
+{essay_question}
+---
+Rubric:
+---
+{grading_rubric}
+---
+Student response:
+---
+{student_response}
+---
+Time on question (seconds): {seconds_on_question}
+
+Respond with ONLY valid JSON (no markdown fences). Top-level keys MUST be exactly:
+- "grading": object with keys "highly_satisfactory" (boolean), "dimension_scores" (object), "overall_percent" (number 0-100), "explanation" (string)
+- "final_grade": object with keys "total_grade_percent" (number 0-100), "explanation" (string), "weighting_notes" (string, optional)
+
+Combine the new grading with the earlier graded questions to set "final_grade" fairly (e.g. weighted by question count).
 
 The JSON must be parseable by Python json.loads.
 """

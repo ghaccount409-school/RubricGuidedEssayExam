@@ -7,7 +7,13 @@ import httpx
 from app.config import get_settings
 from app.errors import TogetherApiError
 from app.education_levels import guidance_for_level, label_for_level
-from app.prompts import FINAL_GRADE_TEMPLATE, GRADE_RESPONSE_TEMPLATE, QUESTION_GENERATION_TEMPLATE
+from app.prompts import (
+    COMBINED_GRADE_AND_FINAL_TEMPLATE,
+    COMBINED_GRADE_AND_NEXT_QUESTION_TEMPLATE,
+    FINAL_GRADE_TEMPLATE,
+    GRADE_RESPONSE_TEMPLATE,
+    QUESTION_GENERATION_TEMPLATE,
+)
 
 
 def _strip_json_fence(text: str) -> str:
@@ -66,7 +72,20 @@ def _mock_final_payload() -> dict[str, Any]:
     }
 
 
-def _chat_completion(messages: list[dict[str, str]]) -> str:
+def _together_error_json_message(e: httpx.HTTPStatusError) -> str:
+    """Short user-facing detail from Together JSON error body."""
+    try:
+        body = e.response.json()
+        if isinstance(body, dict):
+            err = body.get("error")
+            if isinstance(err, dict) and err.get("message"):
+                return str(err["message"]).strip()
+    except Exception:
+        pass
+    return (e.response.text or "")[:300]
+
+
+def _chat_completion(messages: list[dict[str, str]], *, max_tokens: int = 4096) -> str:
     s = get_settings()
     api_key = str(s.together_api_key or "").strip()
     if not api_key:
@@ -80,7 +99,7 @@ def _chat_completion(messages: list[dict[str, str]]) -> str:
         "model": s.together_model,
         "messages": messages,
         "temperature": 0.4,
-        "max_tokens": 4096,
+        "max_tokens": max_tokens,
     }
     try:
         with httpx.Client(timeout=120.0) as client:
@@ -97,7 +116,7 @@ def _chat_completion(messages: list[dict[str, str]]) -> str:
     except httpx.HTTPStatusError as e:
         snippet = ""
         try:
-            snippet = (e.response.text or "")[:400]
+            snippet = (e.response.text or "")[:600]
         except Exception:
             pass
         code = e.response.status_code
@@ -110,6 +129,18 @@ def _chat_completion(messages: list[dict[str, str]]) -> str:
                 "and set TOGETHER_API_KEY in .env with no extra spaces or quotes. "
                 "Keys are only shown once when created. "
                 "Until this is fixed, use Mock mode on the home page.",
+                http_status=503,
+            ) from e
+        if code == 402:
+            # Valid key; billing / credits — common on 2nd+ API call when quota is tight
+            detail = _together_error_json_message(e)
+            raise TogetherApiError(
+                "Together.ai: credit limit or billing issue (HTTP 402).\n\n"
+                "Your API key is accepted; this is not a wrong token. "
+                "Add credits or a payment method at:\n"
+                "https://api.together.ai/settings/billing\n\n"
+                f"Details from Together: {detail}\n\n"
+                "Or choose Mock (testing) on the home page to use the app without live API calls.",
                 http_status=503,
             ) from e
         raise TogetherApiError(
@@ -155,6 +186,121 @@ def generate_question(
         ]
     )
     return _parse_json_object(content)
+
+
+def grade_and_next_question_combined(
+    professor_domain: str,
+    prior_questions_summary: str,
+    next_question_index: int,
+    background_information: str,
+    essay_question: str,
+    grading_rubric: str,
+    student_response: str,
+    seconds_on_question: int | None,
+    education_level: str = "college",
+    *,
+    use_mock: bool = True,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Single API call: grade current answer + generate next question (saves one round trip)."""
+    if use_mock:
+        return (
+            _mock_grade_payload(),
+            _mock_question_payload(professor_domain, next_question_index, education_level),
+        )
+
+    rubric_display = grading_rubric
+    try:
+        rubric_list = json.loads(grading_rubric)
+        if isinstance(rubric_list, list):
+            rubric_display = "\n".join(f"- {x}" for x in rubric_list)
+    except json.JSONDecodeError:
+        pass
+
+    prompt = COMBINED_GRADE_AND_NEXT_QUESTION_TEMPLATE.format(
+        education_level_label=label_for_level(education_level),
+        education_level_guidance=guidance_for_level(education_level),
+        professor_domain=professor_domain,
+        prior_questions_summary=prior_questions_summary or "(none yet)",
+        background_information=background_information,
+        essay_question=essay_question,
+        grading_rubric=rubric_display,
+        student_response=student_response,
+        seconds_on_question=seconds_on_question if seconds_on_question is not None else "not recorded",
+        next_question_index=next_question_index,
+    )
+    content = _chat_completion(
+        [
+            {
+                "role": "system",
+                "content": "You grade one answer and author the next exam question. Output only valid JSON.",
+            },
+            {"role": "user", "content": prompt},
+        ],
+        max_tokens=8192,
+    )
+    parsed = _parse_json_object(content)
+    g = parsed.get("grading")
+    nq = parsed.get("next_question")
+    if not isinstance(g, dict) or not isinstance(nq, dict):
+        raise TogetherApiError(
+            "Together.ai returned invalid combined JSON (expected keys grading, next_question).",
+            http_status=503,
+        )
+    return g, nq
+
+
+def grade_and_final_combined(
+    earlier_questions_graded_blob: str,
+    background_information: str,
+    essay_question: str,
+    grading_rubric: str,
+    student_response: str,
+    seconds_on_question: int | None,
+    education_level: str = "college",
+    *,
+    use_mock: bool = True,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Single API call: grade last answer + overall final grade (saves one round trip)."""
+    if use_mock:
+        return _mock_grade_payload(), _mock_final_payload()
+
+    rubric_display = grading_rubric
+    try:
+        rubric_list = json.loads(grading_rubric)
+        if isinstance(rubric_list, list):
+            rubric_display = "\n".join(f"- {x}" for x in rubric_list)
+    except json.JSONDecodeError:
+        pass
+
+    prompt = COMBINED_GRADE_AND_FINAL_TEMPLATE.format(
+        education_level_label=label_for_level(education_level),
+        education_level_guidance=guidance_for_level(education_level),
+        earlier_questions_graded_blob=earlier_questions_graded_blob or "(no prior questions — single-question exam)",
+        background_information=background_information,
+        essay_question=essay_question,
+        grading_rubric=rubric_display,
+        student_response=student_response,
+        seconds_on_question=seconds_on_question if seconds_on_question is not None else "not recorded",
+    )
+    content = _chat_completion(
+        [
+            {
+                "role": "system",
+                "content": "You grade the last answer and synthesize an overall exam grade. Output only valid JSON.",
+            },
+            {"role": "user", "content": prompt},
+        ],
+        max_tokens=8192,
+    )
+    parsed = _parse_json_object(content)
+    g = parsed.get("grading")
+    fg = parsed.get("final_grade")
+    if not isinstance(g, dict) or not isinstance(fg, dict):
+        raise TogetherApiError(
+            "Together.ai returned invalid combined JSON (expected keys grading, final_grade).",
+            http_status=503,
+        )
+    return g, fg
 
 
 def grade_answer(

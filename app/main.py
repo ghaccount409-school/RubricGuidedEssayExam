@@ -16,7 +16,7 @@ from app.education_levels import (
     EDUCATION_LEVELS,
     label_for_level,
 )
-from app.llm_service import final_grade, generate_question, grade_answer
+from app.llm_service import generate_question, grade_and_final_combined, grade_and_next_question_combined
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -25,6 +25,17 @@ templates.env.filters["level_label"] = label_for_level
 
 app = FastAPI(title="Modular Oral-Style Exam System", version="0.1.0")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+
+@app.exception_handler(TogetherApiError)
+async def together_api_error_handler(request: Request, exc: TogetherApiError):
+    """Return HTML for Together.ai failures instead of a raw 500."""
+    return templates.TemplateResponse(
+        request,
+        "error_llm.html",
+        {"message": exc.message},
+        status_code=exc.http_status,
+    )
 
 
 @app.on_event("startup")
@@ -51,6 +62,30 @@ def _prior_summary(session: ExamSession, db: Session) -> str:
     for r in rows:
         parts.append(f"[Q{r.question_index + 1}] {r.essay_question[:400]}")
     return "\n".join(parts)
+
+
+def _earlier_graded_blob(db: Session, session: ExamSession, before_index: int) -> str:
+    """Text block of essay + response + grade JSON for questions before index (for combined final prompt)."""
+    rows = (
+        db.query(ExamQuestion)
+        .filter(
+            ExamQuestion.session_id == session.id,
+            ExamQuestion.question_index < before_index,
+        )
+        .order_by(ExamQuestion.question_index.asc())
+        .all()
+    )
+    if not rows:
+        return ""
+    parts = []
+    for r in rows:
+        parts.append(
+            f"--- Question {r.question_index + 1} ---\n"
+            f"Essay: {r.essay_question}\n"
+            f"Student response: {r.student_response or ''}\n"
+            f"Grading JSON: {r.graded_state_p_json or '(none)'}"
+        )
+    return "\n\n".join(parts)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -201,37 +236,30 @@ def exam_answer(
     q.student_response = answer.strip()
     q.seconds_on_question = sec
 
-    try:
-        grade_payload = grade_answer(
-            q.background_information,
-            q.essay_question,
-            q.grading_rubric,
-            q.student_response,
-            sec,
-            education_level=session.education_level,
-            use_mock=session.use_mock_llm,
-        )
-    except TogetherApiError:
-        db.rollback()
-        raise
-    q.graded_state_p_json = json.dumps(grade_payload, ensure_ascii=False)
-    db.add(q)
-
     next_index = idx + 1
+
     if next_index < session.num_questions_planned:
+        # One API call: grade this answer + generate next question (was two calls)
         db.flush()
         try:
             prior = _prior_summary(session, db)
-            payload = generate_question(
+            grade_payload, payload = grade_and_next_question_combined(
                 session.professor_domain,
                 prior,
-                question_index=next_index,
+                next_question_index=next_index,
+                background_information=q.background_information,
+                essay_question=q.essay_question,
+                grading_rubric=q.grading_rubric,
+                student_response=q.student_response,
+                seconds_on_question=sec,
                 education_level=session.education_level,
                 use_mock=session.use_mock_llm,
             )
         except TogetherApiError:
             db.rollback()
             raise
+        q.graded_state_p_json = json.dumps(grade_payload, ensure_ascii=False)
+        db.add(q)
         nq = ExamQuestion(
             session_id=session.id,
             question_index=next_index,
@@ -246,34 +274,25 @@ def exam_answer(
         db.commit()
         return RedirectResponse(url=f"/exam/{session_id}/question", status_code=303)
 
-    # Final question done — aggregate grade
+    # Last question: one API call for this answer’s grade + overall final grade (was two calls)
     db.flush()
-    rows = (
-        db.query(ExamQuestion)
-        .filter(ExamQuestion.session_id == session.id)
-        .order_by(ExamQuestion.question_index.asc())
-        .all()
-    )
-    summaries = []
-    for r in rows:
-        if r.graded_state_p_json:
-            summaries.append(
-                {
-                    "question_index": r.question_index,
-                    "essay_question": r.essay_question,
-                    "student_response": r.student_response,
-                    "graded": json.loads(r.graded_state_p_json),
-                }
-            )
+    earlier = _earlier_graded_blob(db, session, idx)
     try:
-        final_payload = final_grade(
-            summaries,
+        grade_payload, final_payload = grade_and_final_combined(
+            earlier,
+            q.background_information,
+            q.essay_question,
+            q.grading_rubric,
+            q.student_response,
+            sec,
             education_level=session.education_level,
             use_mock=session.use_mock_llm,
         )
     except TogetherApiError:
         db.rollback()
         raise
+    q.graded_state_p_json = json.dumps(grade_payload, ensure_ascii=False)
+    db.add(q)
     fg = FinalGrade(
         session_id=session.id,
         total_grade_percent=float(final_payload.get("total_grade_percent", 0)),
