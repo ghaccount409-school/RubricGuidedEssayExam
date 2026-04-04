@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 cd "$(dirname "$0")"
-export MOCK_LLM="${MOCK_LLM:-1}"
-if [[ -x .venv/bin/uvicorn ]]; then
-  exec .venv/bin/uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+# Uses .env for TOGETHER_API_KEY and MOCK_LLM; per-session Mock/Production is chosen on the home page.
+PY=""
+if [[ -x .venv/bin/python3.14 ]]; then
+  PY=".venv/bin/python3.14"
+elif [[ -x .venv/bin/python ]]; then
+  PY=".venv/bin/python"
 fi
-exec uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+if [[ -n "$PY" ]]; then
+  exec "$PY" -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+fi
+exec python3 -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000

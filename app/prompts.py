@@ -2,6 +2,12 @@
 
 QUESTION_GENERATION_TEMPLATE = """You are an expert exam author. The professor has provided domain guidance below (not verbatim questions — use it to scope topic and difficulty).
 
+TARGET EDUCATION LEVEL (tailor reading complexity, prompt style, and rubric strictness to this audience):
+---
+Level: {education_level_label}
+Guidance: {education_level_guidance}
+---
+
 PROFESSOR DOMAIN / CONSTRAINTS:
 ---
 {professor_domain}
@@ -55,6 +61,12 @@ The JSON must be parseable by Python json.loads.
 """
 
 FINAL_GRADE_TEMPLATE = """You compile a fair overall exam grade from per-question summaries.
+
+TARGET EDUCATION LEVEL (keep the same level-appropriate expectations used for each question):
+---
+Level: {education_level_label}
+Guidance: {education_level_guidance}
+---
 
 Each element is one question's grading outcome (JSON-like summaries):
 ---

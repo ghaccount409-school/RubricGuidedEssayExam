@@ -1,40 +1,58 @@
 {% extends "base.html" %}
 {% block title %}Question {{ question_number }}{% endblock %}
 {% block body %}
-<p class="muted">Question {{ question_number }} of {{ total_planned }} · Student <span class="badge">{{ session.student_id }}</span></p>
-
-<div class="card">
-  <h2>Background</h2>
-  <div class="explain">{{ question.background_information }}</div>
+<div class="session-bar">
+  <div class="session-meta">
+    <span class="pill pill-student">{{ session.student_id }}</span>
+    <span class="pill pill-level">{{ education_label }}</span>
+    <span class="pill pill-llm">{{ llm_mode_label }}</span>
+    <span class="muted">Question {{ question_number }} of {{ total_planned }}</span>
+  </div>
+  <div class="progress-track" role="progressbar" aria-valuenow="{{ question_number }}" aria-valuemin="1" aria-valuemax="{{ total_planned }}"
+    aria-label="Exam progress">
+    <div class="progress-fill" style="width: {{ (100 * question_number / total_planned) | round(1) }}%"></div>
+  </div>
 </div>
 
-<div class="card">
-  <h2>Essay question</h2>
-  <p>{{ question.essay_question }}</p>
-  <div class="rubric muted">
-    <strong>Rubric</strong>
+<section class="panel">
+  <h2 class="panel-title">Background</h2>
+  <div class="prose explain">{{ question.background_information }}</div>
+</section>
+
+<section class="panel panel-accent">
+  <h2 class="panel-title">Essay question</h2>
+  <p class="question-text">{{ question.essay_question }}</p>
+  <div class="rubric-block">
+    <h3 class="rubric-title">Rubric</h3>
     {% if rubric_display is string %}
-      <p>{{ rubric_display }}</p>
+      <p class="muted">{{ rubric_display }}</p>
     {% else %}
-      <ul>
+      <ul class="rubric-list">
         {% for c in rubric_display %}
           <li>{{ c }}</li>
         {% endfor %}
       </ul>
     {% endif %}
   </div>
-</div>
+</section>
 
-<form class="card" method="post" action="/exam/{{ session.id }}/answer">
-  <h2>Your answer</h2>
-  <div class="row">
-    <label for="answer">Essay response</label>
-    <textarea id="answer" name="answer" required placeholder="Type your answer here."></textarea>
+<form class="panel form-card" method="post" action="/exam/{{ session.id }}/answer">
+  <h2 class="panel-title">Your answer</h2>
+  <div class="field">
+    <label for="answer">Essay response <span class="req">*</span></label>
+    <textarea id="answer" name="answer" required rows="12" placeholder="Write your response here."></textarea>
   </div>
-  <div class="row">
-    <label for="seconds_on_question">Seconds spent (optional)</label>
-    <input type="text" id="seconds_on_question" name="seconds_on_question" placeholder="e.g. 420">
+  <div class="field field-inline">
+    <label for="seconds_on_question">Time spent (optional)</label>
+    <input type="text" id="seconds_on_question" name="seconds_on_question" inputmode="numeric" pattern="[0-9]*" placeholder="Seconds, e.g. 420">
+    <span class="hint">Helps instructors see pacing; not graded.</span>
   </div>
-  <button type="submit">Submit and continue</button>
+  <div class="form-actions">
+    {% if question_number < total_planned %}
+      <button type="submit" class="btn btn-primary">Submit &amp; next question</button>
+    {% else %}
+      <button type="submit" class="btn btn-primary">Submit &amp; view results</button>
+    {% endif %}
+  </div>
 </form>
 {% endblock %}

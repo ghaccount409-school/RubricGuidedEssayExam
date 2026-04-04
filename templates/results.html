@@ -1,33 +1,42 @@
 {% extends "base.html" %}
 {% block title %}Results{% endblock %}
 {% block body %}
-<p class="muted">Session #{{ session.id }} · {{ session.student_id }}</p>
+<section class="hero hero-compact">
+  <h1 class="hero-title">Exam complete</h1>
+  <p class="hero-lead">
+    Session <strong>#{{ session.id }}</strong> · {{ session.student_id }} · <span class="pill pill-level">{{ education_label }}</span>
+    · <span class="pill pill-llm">{{ llm_mode_label }}</span>
+  </p>
+</section>
 
 {% if final_grade %}
-<div class="card">
-  <h2>Overall grade</h2>
-  <p class="score">{{ "%.1f"|format(final_grade.total_grade_percent) }}%</p>
-  <div class="explain">{{ final_grade.explanation }}</div>
-</div>
+<section class="panel panel-success">
+  <h2 class="panel-title">Overall grade</h2>
+  <p class="score-big">{{ "%.1f"|format(final_grade.total_grade_percent) }}%</p>
+  <div class="prose explain">{{ final_grade.explanation }}</div>
+</section>
 {% endif %}
 
 {% for q in questions %}
-<div class="card">
-  <h2>Question {{ q.question_index + 1 }}</h2>
-  <p class="muted">Prompt</p>
-  <p>{{ q.essay_question }}</p>
-  <p class="muted">Your response</p>
-  <div class="explain">{{ q.student_response or "—" }}</div>
+<section class="panel">
+  <h2 class="panel-title">Question {{ q.question_index + 1 }}</h2>
+  <p class="label-over">Prompt</p>
+  <p class="question-text">{{ q.essay_question }}</p>
+  <p class="label-over">Your response</p>
+  <div class="prose explain response-box">{{ q.student_response or "—" }}</div>
   {% if q.graded_state_p_json %}
     {% set g = q.graded_state_p_json | fromjson %}
-    <p class="muted">Grading</p>
-    <p><strong>{{ "%.1f"|format(g.overall_percent | default(0) | float) }}%</strong>
-      {% if g.highly_satisfactory %} · marked highly satisfactory{% endif %}
+    <p class="label-over">Grading</p>
+    <p class="grade-line">
+      <strong class="score-inline">{{ "%.1f"|format(g.overall_percent | default(0) | float) }}%</strong>
+      {% if g.highly_satisfactory %}<span class="badge-ok">Highly satisfactory</span>{% endif %}
     </p>
-    <div class="explain">{{ g.explanation }}</div>
+    <div class="prose explain">{{ g.explanation }}</div>
   {% endif %}
-</div>
+</section>
 {% endfor %}
 
-<p><a href="/">Start another exam</a></p>
+<p class="next-action">
+  <a href="/" class="btn btn-secondary">Start another exam</a>
+</p>
 {% endblock %}

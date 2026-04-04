@@ -15,6 +15,7 @@ def test_home(client: TestClient):
     r = client.get("/")
     assert r.status_code == 200
     assert "text/html" in r.headers.get("content-type", "")
+    assert b"education_level" in r.content or b"Education level" in r.content
 
 
 def test_static_css(client: TestClient):
@@ -49,12 +50,27 @@ def test_exam_start_rejects_empty_student_id(client: TestClient):
     assert r.status_code == 400
 
 
+def test_exam_start_rejects_invalid_education_level(client: TestClient):
+    r = client.post(
+        "/exam/start",
+        data={
+            "student_id": "x",
+            "professor_domain": "y",
+            "education_level": "not_a_real_level",
+            "num_questions": "1",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 400
+
+
 def test_full_exam_single_question_flow(client: TestClient):
     r0 = client.post(
         "/exam/start",
         data={
             "student_id": "s1",
             "professor_domain": "Domain text for testing.",
+            "education_level": "high_school",
             "num_questions": "1",
         },
         follow_redirects=False,
@@ -66,6 +82,7 @@ def test_full_exam_single_question_flow(client: TestClient):
     q = client.get(f"/exam/{session_id}/question")
     assert q.status_code == 200
     assert b"MOCK" in q.content or b"essay" in q.content.lower()
+    assert "High school" in q.text
 
     r1 = client.post(
         f"/exam/{session_id}/answer",

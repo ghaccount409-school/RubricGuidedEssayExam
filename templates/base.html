@@ -3,23 +3,34 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}Exam System{% endblock %}</title>
+  <title>{% block title %}RGEE{% endblock %} · Rubric-Guided Essay Exam</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;1,9..40,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="page-bg" aria-hidden="true"></div>
   <div class="wrap">
-    <header class="brand">
-      <h1>{% block header_title %}Modular exam prototype{% endblock %}</h1>
-      <nav>
-        <a href="/">Student</a>
-        ·
-        <a href="/professor">Professor</a>
+    <header class="site-header">
+      <div class="brand-block">
+        <a href="/" class="logo">RGEE</a>
+        <span class="tagline">Rubric-guided essay exams</span>
+      </div>
+      <nav class="main-nav" aria-label="Main">
+        <a href="/" class="nav-link{% if request.url.path == '/' %} is-active{% endif %}">Take exam</a>
+        <a href="/professor" class="nav-link{% if request.url.path.startswith('/professor') %} is-active{% endif %}">Instructor</a>
       </nav>
     </header>
-    {% block body %}{% endblock %}
+
+    <main id="main" class="main">
+      {% block body %}{% endblock %}
+    </main>
+
+    <footer class="site-footer">
+      <p>Modular oral-style exam system · Mock LLM supported for local demos</p>
+    </footer>
   </div>
 </body>
 </html>

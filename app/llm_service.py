@@ -5,6 +5,8 @@ from typing import Any
 import httpx
 
 from app.config import get_settings
+from app.errors import TogetherApiError
+from app.education_levels import guidance_for_level, label_for_level
 from app.prompts import FINAL_GRADE_TEMPLATE, GRADE_RESPONSE_TEMPLATE, QUESTION_GENERATION_TEMPLATE
 
 
@@ -27,7 +29,7 @@ def _parse_json_object(text: str) -> dict[str, Any]:
         raise
 
 
-def _mock_question_payload(professor_domain: str, q_index: int) -> dict[str, Any]:
+def _mock_question_payload(professor_domain: str, q_index: int, education_level: str) -> dict[str, Any]:
     return {
         "background_information": (
             f"[MOCK] Brief context for domain snippet: {professor_domain[:120]}..."
@@ -43,7 +45,7 @@ def _mock_question_payload(professor_domain: str, q_index: int) -> dict[str, Any
             "Explains the connection between those ideas clearly",
             "Discusses assessment or async context in a substantive way",
         ],
-        "domain_notes": "Mock mode: no live LLM.",
+        "domain_notes": f"Mock mode: no live LLM. Education level: {label_for_level(education_level)}.",
     }
 
 
@@ -66,11 +68,12 @@ def _mock_final_payload() -> dict[str, Any]:
 
 def _chat_completion(messages: list[dict[str, str]]) -> str:
     s = get_settings()
-    if s.mock_llm:
-        raise RuntimeError("mock_llm should be handled before _chat_completion")
-    if not s.together_api_key:
-        raise ValueError(
-            "TOGETHER_API_KEY is missing. Copy .env.example to .env and set your key, or set MOCK_LLM=1."
+    api_key = str(s.together_api_key or "").strip()
+    if not api_key:
+        raise TogetherApiError(
+            "TOGETHER_API_KEY is missing. Add it to your .env file next to requirements.txt, "
+            "or use Mock mode on the home page.",
+            http_status=503,
         )
     url = f"{s.together_base_url.rstrip('/')}/chat/completions"
     body = {
@@ -79,29 +82,69 @@ def _chat_completion(messages: list[dict[str, str]]) -> str:
         "temperature": 0.4,
         "max_tokens": 4096,
     }
-    with httpx.Client(timeout=120.0) as client:
-        r = client.post(
-            url,
-            headers={
-                "Authorization": f"Bearer {s.together_api_key}",
-                "Content-Type": "application/json",
-            },
-            json=body,
-        )
-        r.raise_for_status()
-        data = r.json()
-    return data["choices"][0]["message"]["content"] or ""
+    try:
+        with httpx.Client(timeout=120.0) as client:
+            r = client.post(
+                url,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=body,
+            )
+            r.raise_for_status()
+            data = r.json()
+    except httpx.HTTPStatusError as e:
+        snippet = ""
+        try:
+            snippet = (e.response.text or "")[:400]
+        except Exception:
+            pass
+        code = e.response.status_code
+        if code in (401, 403):
+            raise TogetherApiError(
+                "Together.ai rejected your API key (401/403). "
+                "Create a new Project API key at "
+                "https://api.together.ai/settings/api-keys "
+                "(sign in → your project → API Keys), copy the full key, "
+                "and set TOGETHER_API_KEY in .env with no extra spaces or quotes. "
+                "Keys are only shown once when created. "
+                "Until this is fixed, use Mock mode on the home page.",
+                http_status=503,
+            ) from e
+        raise TogetherApiError(
+            f"Together.ai request failed (HTTP {code}). {snippet}",
+            http_status=503,
+        ) from e
+    except httpx.RequestError as e:
+        raise TogetherApiError(
+            f"Could not reach Together.ai: {e!s}",
+            http_status=503,
+        ) from e
+
+    try:
+        return data["choices"][0]["message"]["content"] or ""
+    except (KeyError, IndexError, TypeError) as e:
+        raise TogetherApiError(
+            f"Unexpected response from Together.ai: {data!r}"[:800],
+            http_status=503,
+        ) from e
 
 
 def generate_question(
     professor_domain: str,
     prior_questions_summary: str,
     question_index: int = 0,
+    education_level: str = "college",
+    *,
+    use_mock: bool = True,
 ) -> dict[str, Any]:
-    if get_settings().mock_llm:
-        return _mock_question_payload(professor_domain, question_index)
+    if use_mock:
+        return _mock_question_payload(professor_domain, question_index, education_level)
 
     prompt = QUESTION_GENERATION_TEMPLATE.format(
+        education_level_label=label_for_level(education_level),
+        education_level_guidance=guidance_for_level(education_level),
         professor_domain=professor_domain,
         prior_questions_summary=prior_questions_summary or "(none yet)",
     )
@@ -120,8 +163,11 @@ def grade_answer(
     grading_rubric: str,
     student_response: str,
     seconds_on_question: int | None,
+    education_level: str = "college",
+    *,
+    use_mock: bool = True,
 ) -> dict[str, Any]:
-    if get_settings().mock_llm:
+    if use_mock:
         return _mock_grade_payload()
 
     rubric_display = grading_rubric
@@ -133,6 +179,8 @@ def grade_answer(
         pass
 
     prompt = GRADE_RESPONSE_TEMPLATE.format(
+        education_level_label=label_for_level(education_level),
+        education_level_guidance=guidance_for_level(education_level),
         background_information=background_information,
         essay_question=essay_question,
         grading_rubric=rubric_display,
@@ -148,12 +196,21 @@ def grade_answer(
     return _parse_json_object(content)
 
 
-def final_grade(per_question_summaries: list[dict[str, Any]]) -> dict[str, Any]:
-    if get_settings().mock_llm:
+def final_grade(
+    per_question_summaries: list[dict[str, Any]],
+    education_level: str = "college",
+    *,
+    use_mock: bool = True,
+) -> dict[str, Any]:
+    if use_mock:
         return _mock_final_payload()
 
     blob = json.dumps(per_question_summaries, ensure_ascii=False, indent=2)
-    prompt = FINAL_GRADE_TEMPLATE.format(per_question_summaries=blob)
+    prompt = FINAL_GRADE_TEMPLATE.format(
+        education_level_label=label_for_level(education_level),
+        education_level_guidance=guidance_for_level(education_level),
+        per_question_summaries=blob,
+    )
     content = _chat_completion(
         [
             {

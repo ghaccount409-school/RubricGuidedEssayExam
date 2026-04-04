@@ -7,12 +7,21 @@ from fastapi.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.database import ExamQuestion, ExamSession, FinalGrade, get_db, init_db
+from app.errors import TogetherApiError
+from app.education_levels import (
+    ALLOWED_LEVEL_IDS,
+    DEFAULT_EDUCATION_LEVEL_ID,
+    EDUCATION_LEVELS,
+    label_for_level,
+)
 from app.llm_service import final_grade, generate_question, grade_answer
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 templates.env.filters["fromjson"] = lambda s: json.loads(s)
+templates.env.filters["level_label"] = label_for_level
 
 app = FastAPI(title="Modular Oral-Style Exam System", version="0.1.0")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
@@ -46,7 +55,19 @@ def _prior_summary(session: ExamSession, db: Session) -> str:
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
-    return templates.TemplateResponse(request, "index.html", {})
+    s = get_settings()
+    has_key = bool(str(s.together_api_key or "").strip())
+    default_toggle_mock = not has_key or s.mock_llm
+    return templates.TemplateResponse(
+        request,
+        "index.html",
+        {
+            "education_levels": EDUCATION_LEVELS,
+            "default_level": DEFAULT_EDUCATION_LEVEL_ID,
+            "api_key_configured": has_key,
+            "default_toggle_mock": default_toggle_mock,
+        },
+    )
 
 
 @app.post("/exam/start", response_class=HTMLResponse)
@@ -54,26 +75,48 @@ def exam_start(
     request: Request,
     student_id: str = Form(...),
     professor_domain: str = Form(...),
+    education_level: str = Form(DEFAULT_EDUCATION_LEVEL_ID),
+    llm_mode: str = Form("mock"),
     num_questions: int = Form(1),
     db: Session = Depends(get_db),
 ):
     student_id = student_id.strip()
     if not student_id:
         raise HTTPException(400, "Student ID required")
+    level_key = education_level.strip().lower()
+    if level_key not in ALLOWED_LEVEL_IDS:
+        raise HTTPException(400, "Invalid education level")
+    mode = llm_mode.strip().lower()
+    use_mock = mode != "live"
+    if not use_mock and not str(get_settings().together_api_key or "").strip():
+        raise HTTPException(
+            400,
+            "Production mode requires TOGETHER_API_KEY in the server .env file.",
+        )
     n = max(1, min(20, int(num_questions)))
 
     session = ExamSession(
         student_id=student_id,
         professor_domain=professor_domain.strip(),
+        education_level=level_key,
+        use_mock_llm=use_mock,
         num_questions_planned=n,
         current_question_index=0,
         status="in_progress",
     )
     db.add(session)
-    db.commit()
-    db.refresh(session)
-
-    payload = generate_question(session.professor_domain, "", question_index=0)
+    try:
+        db.flush()
+        payload = generate_question(
+            session.professor_domain,
+            "",
+            question_index=0,
+            education_level=session.education_level,
+            use_mock=session.use_mock_llm,
+        )
+    except TogetherApiError:
+        db.rollback()
+        raise
     eq = ExamQuestion(
         session_id=session.id,
         question_index=0,
@@ -124,6 +167,8 @@ def exam_question(request: Request, session_id: int, db: Session = Depends(get_d
             "question_number": idx + 1,
             "total_planned": session.num_questions_planned,
             "rubric_display": rubric_display,
+            "education_label": label_for_level(session.education_level),
+            "llm_mode_label": "Mock" if session.use_mock_llm else "Production",
         },
     )
 
@@ -156,21 +201,37 @@ def exam_answer(
     q.student_response = answer.strip()
     q.seconds_on_question = sec
 
-    grade_payload = grade_answer(
-        q.background_information,
-        q.essay_question,
-        q.grading_rubric,
-        q.student_response,
-        sec,
-    )
+    try:
+        grade_payload = grade_answer(
+            q.background_information,
+            q.essay_question,
+            q.grading_rubric,
+            q.student_response,
+            sec,
+            education_level=session.education_level,
+            use_mock=session.use_mock_llm,
+        )
+    except TogetherApiError:
+        db.rollback()
+        raise
     q.graded_state_p_json = json.dumps(grade_payload, ensure_ascii=False)
     db.add(q)
 
     next_index = idx + 1
     if next_index < session.num_questions_planned:
-        db.commit()
-        prior = _prior_summary(session, db)
-        payload = generate_question(session.professor_domain, prior, question_index=next_index)
+        db.flush()
+        try:
+            prior = _prior_summary(session, db)
+            payload = generate_question(
+                session.professor_domain,
+                prior,
+                question_index=next_index,
+                education_level=session.education_level,
+                use_mock=session.use_mock_llm,
+            )
+        except TogetherApiError:
+            db.rollback()
+            raise
         nq = ExamQuestion(
             session_id=session.id,
             question_index=next_index,
@@ -186,7 +247,7 @@ def exam_answer(
         return RedirectResponse(url=f"/exam/{session_id}/question", status_code=303)
 
     # Final question done — aggregate grade
-    db.commit()
+    db.flush()
     rows = (
         db.query(ExamQuestion)
         .filter(ExamQuestion.session_id == session.id)
@@ -204,7 +265,15 @@ def exam_answer(
                     "graded": json.loads(r.graded_state_p_json),
                 }
             )
-    final_payload = final_grade(summaries)
+    try:
+        final_payload = final_grade(
+            summaries,
+            education_level=session.education_level,
+            use_mock=session.use_mock_llm,
+        )
+    except TogetherApiError:
+        db.rollback()
+        raise
     fg = FinalGrade(
         session_id=session.id,
         total_grade_percent=float(final_payload.get("total_grade_percent", 0)),
@@ -239,6 +308,8 @@ def exam_results(request: Request, session_id: int, db: Session = Depends(get_db
             "session": session,
             "questions": rows,
             "final_grade": fg,
+            "education_label": label_for_level(session.education_level),
+            "llm_mode_label": "Mock" if session.use_mock_llm else "Production",
         },
     )
 

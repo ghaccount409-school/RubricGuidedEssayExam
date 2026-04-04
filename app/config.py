@@ -9,8 +9,17 @@ class Settings(BaseSettings):
 
     together_api_key: str = ""
     together_model: str = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+    # Official inference host (see https://docs.together.ai/docs/api-keys-authentication)
     together_base_url: str = "https://api.together.xyz/v1"
     mock_llm: bool = False
+
+    @field_validator("together_api_key", mode="before")
+    @classmethod
+    def _normalize_api_key(cls, v):
+        if v is None:
+            return ""
+        s = str(v).strip().strip('"').strip("'")
+        return s
 
     @field_validator("mock_llm", mode="before")
     @classmethod

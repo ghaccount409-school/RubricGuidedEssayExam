@@ -2,10 +2,11 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, create_engine
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, create_engine, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
 from app.config import get_settings
+from app.education_levels import DEFAULT_EDUCATION_LEVEL_ID
 
 
 class Base(DeclarativeBase):
@@ -18,6 +19,8 @@ class ExamSession(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     student_id: Mapped[str] = mapped_column(String(256), index=True)
     professor_domain: Mapped[str] = mapped_column(Text)
+    education_level: Mapped[str] = mapped_column(String(64), default=DEFAULT_EDUCATION_LEVEL_ID)
+    use_mock_llm: Mapped[bool] = mapped_column(Boolean, default=True)
     num_questions_planned: Mapped[int] = mapped_column(Integer, default=1)
     current_question_index: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(64), default="in_progress")  # in_progress | completed
@@ -67,8 +70,35 @@ engine = _engine()
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
+def _migrate_sqlite_schema() -> None:
+    if not str(engine.url).startswith("sqlite"):
+        return
+    with engine.begin() as conn:
+        try:
+            conn.execute(
+                text(
+                    "ALTER TABLE exam_sessions ADD COLUMN education_level VARCHAR(64) NOT NULL DEFAULT '"
+                    + DEFAULT_EDUCATION_LEVEL_ID
+                    + "'"
+                )
+            )
+        except Exception as e:
+            msg = str(e).lower()
+            if "duplicate column" not in msg and "already exists" not in msg:
+                raise
+        try:
+            conn.execute(
+                text("ALTER TABLE exam_sessions ADD COLUMN use_mock_llm INTEGER NOT NULL DEFAULT 1")
+            )
+        except Exception as e:
+            msg = str(e).lower()
+            if "duplicate column" not in msg and "already exists" not in msg:
+                raise
+
+
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
+    _migrate_sqlite_schema()
 
 
 def get_db():

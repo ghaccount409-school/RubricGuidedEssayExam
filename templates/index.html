@@ -1,25 +1,100 @@
 {% extends "base.html" %}
 {% block title %}Start exam{% endblock %}
 {% block body %}
-<p class="muted">Enter a student identifier and domain guidance for the LLM (topic, level, constraints — not copy-paste exam questions).</p>
+<section class="hero">
+  <h1 class="hero-title">{% block header_title %}Begin your session{% endblock %}</h1>
+  <p class="hero-lead">
+    Answer essay questions tailored to your topic and <strong>education level</strong>. Responses are graded against a clear rubric.
+    Add topic notes for the model—scope and constraints, not copy-paste exam text.
+  </p>
+</section>
 
-<form class="card" method="post" action="/exam/start">
-  <h2>Start session</h2>
-  <div class="row">
-    <label for="student_id">Student ID</label>
-    <input type="text" id="student_id" name="student_id" required placeholder="e.g. student_001">
+<ol class="steps" aria-label="How it works">
+  <li><span class="step-num">1</span> Enter your ID and choose school level</li>
+  <li><span class="step-num">2</span> Describe the subject area for the AI</li>
+  <li><span class="step-num">3</span> Answer each question, then review your grade</li>
+</ol>
+
+<form class="panel form-card" method="post" action="/exam/start" id="start-form">
+  <h2 class="panel-title">Session details</h2>
+
+  <div class="form-grid">
+    <div class="field">
+      <label for="student_id">Student ID <span class="req">*</span></label>
+      <input type="text" id="student_id" name="student_id" required autocomplete="username"
+        placeholder="e.g. jdoe_001" maxlength="256">
+      <span class="hint">Used only to label this attempt in the instructor view.</span>
+    </div>
+
+    <div class="field">
+      <label for="education_level">Education level <span class="req">*</span></label>
+      <div class="select-wrap">
+        <select id="education_level" name="education_level" required aria-describedby="edu-help">
+          {% for lvl in education_levels %}
+          <option value="{{ lvl.id }}"{% if lvl.id == default_level %} selected{% endif %}>{{ lvl.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <span id="edu-help" class="hint">Questions and grading expectations match this level (primary through graduate).</span>
+    </div>
+
+    <div class="field field-span-2">
+      <label for="professor_domain">Topic &amp; constraints for the AI <span class="req">*</span></label>
+      <textarea id="professor_domain" name="professor_domain" required rows="5"
+        placeholder="Example: High school biology — cell division (mitosis vs meiosis). Students should explain phases in their own words; no need for Latin names beyond mitosis/meiosis."></textarea>
+      <span class="hint">Sets the domain and difficulty; the model generates new questions from this guidance.</span>
+    </div>
+
+    <div class="field">
+      <label for="num_questions">Number of essay questions</label>
+      <input type="number" id="num_questions" name="num_questions" min="1" max="20" value="1">
+      <span class="hint">Between 1 and 20 per session.</span>
+    </div>
+
+    <div class="field field-span-2 llm-mode-field">
+      <span class="field-label-row">LLM mode</span>
+      <input type="hidden" name="llm_mode" id="llm_mode" value="{% if default_toggle_mock %}mock{% else %}live{% endif %}">
+      <div class="mode-toggle-wrap">
+        <button type="button" class="mode-pill {% if default_toggle_mock %}is-active{% endif %}" id="btn-mock" aria-pressed="{% if default_toggle_mock %}true{% else %}false{% endif %}">Mock (testing)</button>
+        <button type="button" class="mode-pill {% if not default_toggle_mock %}is-active{% endif %}" id="btn-live" aria-pressed="{% if not default_toggle_mock %}true{% else %}false{% endif %}" {% if not api_key_configured %}disabled title="Configure TOGETHER_API_KEY on the server"{% endif %}>Production</button>
+      </div>
+      <span class="hint" id="llm-mode-hint">
+        {% if not api_key_configured %}
+        <strong>Mock only:</strong> add <code>TOGETHER_API_KEY</code> to the server <code>.env</code> to enable Production (live Together.ai calls).
+        {% else %}
+        <strong>Mock</strong> uses fixed demo questions and scores (no API usage). <strong>Production</strong> calls Together.ai using the server API key.
+        {% endif %}
+      </span>
+    </div>
   </div>
-  <div class="row">
-    <label for="professor_domain">Professor domain / constraints</label>
-    <textarea id="professor_domain" name="professor_domain" required
-      placeholder="e.g. Second-year data structures: hash tables, collision resolution, load factor. Emphasize conceptual understanding, not code dumps."></textarea>
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Generate first question →</button>
   </div>
-  <div class="row">
-    <label for="num_questions">Number of essay questions</label>
-    <input type="number" id="num_questions" name="num_questions" min="1" max="20" value="1">
-  </div>
-  <button type="submit">Generate first question</button>
 </form>
 
-<p class="muted">For testing without Together.ai, set <code>MOCK_LLM=1</code> in a <code>.env</code> file next to <code>requirements.txt</code>.</p>
+<section class="callout callout-tip">
+  The server <code>.env</code> can set a default via <code>MOCK_LLM</code>; this page lets you pick <strong>Mock</strong> or <strong>Production</strong> for each exam session.
+</section>
+<script>
+(function () {
+  var hidden = document.getElementById('llm_mode');
+  var btnMock = document.getElementById('btn-mock');
+  var btnLive = document.getElementById('btn-live');
+  if (!hidden || !btnMock || !btnLive) return;
+  function setMode(mode) {
+    var isMock = mode === 'mock';
+    hidden.value = isMock ? 'mock' : 'live';
+    btnMock.classList.toggle('is-active', isMock);
+    btnLive.classList.toggle('is-active', !isMock);
+    btnMock.setAttribute('aria-pressed', isMock);
+    btnLive.setAttribute('aria-pressed', !isMock);
+  }
+  btnMock.addEventListener('click', function () { setMode('mock'); });
+  btnLive.addEventListener('click', function () {
+    if (btnLive.disabled) return;
+    setMode('live');
+  });
+})();
+</script>
 {% endblock %}

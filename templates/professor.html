@@ -1,33 +1,41 @@
 {% extends "base.html" %}
-{% block title %}Professor review{% endblock %}
-{% block header_title %}Professor dashboard{% endblock %}
+{% block title %}Instructor{% endblock %}
 {% block body %}
-<p class="muted">Recent exam sessions (newest first).</p>
+<section class="hero hero-compact">
+  <h1 class="hero-title">{% block header_title %}Instructor dashboard{% endblock %}</h1>
+  <p class="hero-lead">Recent exam sessions, newest first (up to 200).</p>
+</section>
 
-<div class="card">
-  <table>
-    <thead>
-      <tr>
-        <th>ID</th>
-        <th>Student</th>
-        <th>Status</th>
-        <th>Created</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for s in sessions %}
-      <tr>
-        <td>{{ s.id }}</td>
-        <td>{{ s.student_id }}</td>
-        <td>{{ s.status }}</td>
-        <td>{{ s.created_at }}</td>
-        <td><a href="/professor/exam/{{ s.id }}">Review</a></td>
-      </tr>
+<div class="panel panel-table">
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th scope="col">ID</th>
+          <th scope="col">Student</th>
+          <th scope="col">Level</th>
+          <th scope="col">LLM</th>
+          <th scope="col">Status</th>
+          <th scope="col">Created</th>
+          <th scope="col"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in sessions %}
+        <tr>
+          <td>{{ s.id }}</td>
+          <td>{{ s.student_id }}</td>
+          <td><span class="pill pill-level pill-sm">{{ s.education_level | level_label }}</span></td>
+          <td><span class="pill pill-llm pill-sm">{% if s.use_mock_llm %}Mock{% else %}Prod{% endif %}</span></td>
+          <td><span class="status-pill status-{{ s.status }}">{{ s.status }}</span></td>
+          <td class="nowrap">{{ s.created_at }}</td>
+          <td><a href="/professor/exam/{{ s.id }}" class="link-arrow">Review →</a></td>
+        </tr>
       {% else %}
-      <tr><td colspan="5" class="muted">No sessions yet.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+      <tr><td colspan="7" class="muted center">No sessions yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endblock %}
