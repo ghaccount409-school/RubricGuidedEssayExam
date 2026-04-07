@@ -2,15 +2,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
-
 pytestmark = pytest.mark.integration
-
-
-@pytest.fixture
-def client():
-    with TestClient(app) as c:
-        yield c
 
 
 def test_home(client: TestClient):
