@@ -1,4 +1,5 @@
-# Unit and integration tests (pytest). Runs on push/PR; manual runs allow custom pytest args.
+# Project standard: pytest (see tests/ and pytest.ini).
+# unittest is not used; plain assert + fixtures + TestClient fit FastAPI well.
 name: Python tests
 
 on:
@@ -19,7 +20,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  pytest:
+    name: pytest (Python 3.12)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -42,11 +44,11 @@ jobs:
         env:
           MOCK_LLM: "1"
           DATABASE_URL: "sqlite:///:memory:"
-        run: pytest tests/ -v --tb=short
+        run: python -m pytest tests/ -v --tb=short
 
       - name: Run pytest (manual)
         if: github.event_name == 'workflow_dispatch'
         env:
           MOCK_LLM: "1"
           DATABASE_URL: "sqlite:///:memory:"
-        run: pytest tests/ -v --tb=short ${{ inputs.pytest_args }}
+        run: python -m pytest tests/ -v --tb=short ${{ inputs.pytest_args }}
