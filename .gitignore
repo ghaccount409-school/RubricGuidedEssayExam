@@ -11,9 +11,4 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-# Local CI report artifacts / generated Pages preview
 site/
-junit.xml
-security-junit.xml
-bandit.json
-pip_audit.json

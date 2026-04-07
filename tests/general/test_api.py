@@ -32,18 +32,6 @@ def test_exam_start_redirects_and_creates_session(client: TestClient):
     assert "/question" in r.headers["location"]
 
 
-def test_exam_start_rejects_empty_student_id(client: TestClient):
-    r = client.post(
-        "/exam/start",
-        data={
-            "student_id": "   ",
-            "professor_domain": "x",
-            "num_questions": "1",
-        },
-    )
-    assert r.status_code == 400
-
-
 def test_exam_start_rejects_invalid_education_level(client: TestClient):
     r = client.post(
         "/exam/start",

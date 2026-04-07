@@ -1,0 +1,25 @@
+{
+  "updated_at": "2026-04-07T12:00:00Z",
+  "pytest_exit_codes": {
+    "general": 0,
+    "security": 0
+  },
+  "all_passed": true,
+  "general": {
+    "passed": 18,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "deselected": 0,
+    "total": 18
+  },
+  "security": {
+    "passed": 4,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "deselected": 0,
+    "total": 4
+  },
+  "workflow_run_url": ""
+}

@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       pytest_args:
-        description: "Extra pytest arguments (e.g. tests/test_api.py::test_home -k mock)"
+        description: "Extra args for the general-tests step (e.g. -k mock tests/general/test_api.py)"
         required: false
         default: ""
         type: string
@@ -39,16 +39,30 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run pytest (CI — push / pull_request)
+      - name: General tests (unit + integration)
         if: github.event_name != 'workflow_dispatch'
         env:
           MOCK_LLM: "1"
           DATABASE_URL: "sqlite:///:memory:"
-        run: python -m pytest tests/ -v --tb=short
+        run: python -m pytest tests/general -v --tb=short
 
-      - name: Run pytest (manual)
+      - name: Security tests
+        if: github.event_name != 'workflow_dispatch'
+        env:
+          MOCK_LLM: "1"
+          DATABASE_URL: "sqlite:///:memory:"
+        run: python -m pytest tests/security -v --tb=short
+
+      - name: General tests (manual)
         if: github.event_name == 'workflow_dispatch'
         env:
           MOCK_LLM: "1"
           DATABASE_URL: "sqlite:///:memory:"
-        run: python -m pytest tests/ -v --tb=short ${{ inputs.pytest_args }}
+        run: python -m pytest tests/general -v --tb=short ${{ inputs.pytest_args }}
+
+      - name: Security tests (manual)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          MOCK_LLM: "1"
+          DATABASE_URL: "sqlite:///:memory:"
+        run: python -m pytest tests/security -v --tb=short
