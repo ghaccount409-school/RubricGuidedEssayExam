@@ -20,7 +20,8 @@
 <div class="panel panel-success">
   <h2 class="panel-title">Final grade</h2>
   <p class="score-big">{{ "%.1f"|format(final_grade.total_grade_percent) }}%</p>
-  <div class="prose explain">{{ final_grade.explanation }}</div>
+  <p class="label-over rubric-label rubric-label-summary">Overall final summary</p>
+  <div class="prose explain response-box rubric-box rubric-box-summary">{{ overall_final_summary }}</div>
 </div>
 {% endif %}
 
@@ -65,6 +66,12 @@
     {% endfor %}
   </ul>
   {% endif %}
+  <p class="label-over rubric-label rubric-label-strength">Strengths</p>
+  <div class="prose explain response-box rubric-box rubric-box-strength">{{ item.rubric_feedback.strengths }}</div>
+  <p class="label-over rubric-label rubric-label-improve">Areas for improvement</p>
+  <div class="prose explain response-box rubric-box rubric-box-improve">{{ item.rubric_feedback.areas_for_improvement }}</div>
+  <p class="label-over rubric-label rubric-label-suggest">Suggestions</p>
+  <div class="prose explain response-box rubric-box rubric-box-suggest">{{ item.rubric_feedback.suggestions }}</div>
   {% endif %}
 </div>
 {% endfor %}

@@ -81,6 +81,10 @@ def test_full_exam_single_question_flow(client: TestClient):
     assert b"84" in res.content or b"grade" in res.content.lower()
     assert "Rubric breakdown" in res.text
     assert "Reference answer guidance" in res.text
+    assert "Strengths" in res.text
+    assert "Areas for improvement" in res.text
+    assert "Suggestions" in res.text
+    assert "Overall final summary" in res.text
 
 
 def test_two_question_flow(client: TestClient):
@@ -164,6 +168,10 @@ def test_professor_dashboard_and_detail(client: TestClient):
     assert det.status_code == 200
     assert "Reference answer guidance" in det.text
     assert "Rubric breakdown" in det.text
+    assert "Strengths" in det.text
+    assert "Areas for improvement" in det.text
+    assert "Suggestions" in det.text
+    assert "Overall final summary" in det.text
 
     assert client.get("/professor/exam/99999").status_code == 404
 

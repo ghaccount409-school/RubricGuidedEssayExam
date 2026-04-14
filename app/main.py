@@ -183,6 +183,118 @@ def _reference_answer_text(grade_payload: dict, rubric: list[str]) -> str:
     return f"A strong answer should cover: {joined}."
 
 
+def _first_nonempty_str(payload: dict, keys: tuple[str, ...]) -> str:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _list_or_text(payload: dict, keys: tuple[str, ...]) -> str:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, list):
+            items = [str(v).strip() for v in value if str(v).strip()]
+            if items:
+                return "\n".join(f"- {item}" for item in items)
+    return ""
+
+
+def _rubric_feedback_sections(
+    grade_payload: dict, rubric_breakdown: list[dict], rubric: list[str]
+) -> dict[str, str]:
+    strengths = _list_or_text(
+        grade_payload,
+        (
+            "strengths",
+            "strength",
+            "what_went_well",
+            "positive_feedback",
+            "strong_points",
+        ),
+    )
+    improvements = _list_or_text(
+        grade_payload,
+        (
+            "areas_for_improvement",
+            "improvements",
+            "weaknesses",
+            "gaps",
+            "needs_improvement",
+        ),
+    )
+    suggestions = _list_or_text(
+        grade_payload,
+        ("suggestions", "recommendations", "next_steps", "study_suggestions"),
+    )
+    if not strengths:
+        strong_rows = [
+            row for row in rubric_breakdown if row.get("score") is not None and float(row["score"]) >= 80
+        ]
+        if strong_rows:
+            strengths = "\n".join(
+                f"- {row['criterion']} ({float(row['score']):.1f}%)"
+                for row in strong_rows[:3]
+            )
+        elif rubric:
+            strengths = f"- {rubric[0]}"
+        else:
+            overall = grade_payload.get("overall_percent")
+            if isinstance(overall, (int, float)) and float(overall) >= 70:
+                strengths = "- Demonstrates a solid baseline understanding of the prompt."
+            else:
+                strengths = "- Attempts to address the prompt and key concepts."
+    if not improvements:
+        low_rows = [
+            row for row in rubric_breakdown if row.get("score") is not None and float(row["score"]) < 80
+        ]
+        if low_rows:
+            improvements = "\n".join(
+                f"- {row['criterion']} ({float(row['score']):.1f}%)"
+                for row in low_rows[:3]
+            )
+        elif rubric:
+            improvements = f"- {rubric[min(1, len(rubric) - 1)]}"
+        else:
+            improvements = "- Needs clearer evidence and tighter alignment to the prompt."
+    if not suggestions:
+        suggestion_lines = []
+        for row in rubric_breakdown:
+            if row.get("score") is not None and float(row["score"]) < 80:
+                suggestion_lines.append(f"{row['criterion']}.")
+        if suggestion_lines:
+            suggestions = "- Add clearer support for:\n\n" + "\n".join(suggestion_lines[:3])
+        else:
+            suggestions = (
+                "- Keep the response structure clear and focused.\n"
+                "- Support each claim with concrete examples.\n"
+                "- Map each paragraph directly to rubric criteria."
+            )
+    return {
+        "strengths": strengths or "No strengths were explicitly returned by the grader.",
+        "areas_for_improvement": improvements,
+        "suggestions": suggestions,
+    }
+
+
+def _overall_final_summary(final_grade_row: FinalGrade | None) -> str:
+    if not final_grade_row:
+        return "Final summary is not available yet."
+    parsed = _safe_json_dict(final_grade_row.summary_json)
+    text = _first_nonempty_str(
+        parsed,
+        ("overall_final_summary", "final_summary", "summary", "explanation"),
+    )
+    if text:
+        return text
+    if final_grade_row.explanation:
+        return final_grade_row.explanation
+    return "Final summary is not available yet."
+
+
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
     s = get_settings()
@@ -480,6 +592,9 @@ def exam_results(request: Request, session_id: int, db: Session = Depends(get_db
                 "rubric": rubric,
                 "rubric_breakdown": rubric_breakdown,
                 "reference_answer": _reference_answer_text(grade_payload, rubric),
+                "rubric_feedback": _rubric_feedback_sections(
+                    grade_payload, rubric_breakdown, rubric
+                ),
             }
         )
     return templates.TemplateResponse(
@@ -490,6 +605,7 @@ def exam_results(request: Request, session_id: int, db: Session = Depends(get_db
             "questions": rows,
             "result_items": result_items,
             "final_grade": fg,
+            "overall_final_summary": _overall_final_summary(fg),
             "education_label": label_for_level(session.education_level),
             "llm_mode_label": "Mock" if session.use_mock_llm else "Production",
         },
@@ -536,6 +652,7 @@ def professor_exam_detail(request: Request, session_id: int, db: Session = Depen
                 "rubric": rubric,
                 "rubric_breakdown": rubric_breakdown,
                 "reference_answer": _reference_answer_text(gp, rubric),
+                "rubric_feedback": _rubric_feedback_sections(gp, rubric_breakdown, rubric),
             }
         )
     return templates.TemplateResponse(
@@ -545,5 +662,6 @@ def professor_exam_detail(request: Request, session_id: int, db: Session = Depen
             "session": session,
             "items": graded,
             "final_grade": fg,
+            "overall_final_summary": _overall_final_summary(fg),
         },
     )
