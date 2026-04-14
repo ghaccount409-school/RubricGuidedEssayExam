@@ -32,21 +32,39 @@
   <p class="label-over">Question</p>
   <p class="question-text">{{ item.row.essay_question }}</p>
   <p class="label-over">Rubric</p>
-  {% if item.rubric is string %}
-    <div class="prose explain">{{ item.rubric }}</div>
-  {% else %}
+  {% if item.rubric %}
     <ul class="rubric-list">
       {% for c in item.rubric %}
         <li>{{ c }}</li>
       {% endfor %}
     </ul>
+  {% else %}
+    <div class="prose explain">No rubric saved.</div>
   {% endif %}
   <p class="label-over">Student answer</p>
   <div class="prose explain response-box">{{ item.row.student_response or "—" }}</div>
-  {% if item.grade %}
+  <p class="label-over">Reference answer guidance</p>
+  <div class="prose explain response-box">{{ item.reference_answer }}</div>
+  {% if item.grade and item.grade|length > 0 %}
   <p class="label-over">Model grading</p>
   <p class="grade-line"><strong class="score-inline">{{ "%.1f"|format(item.grade.overall_percent | default(0) | float) }}%</strong></p>
   <div class="prose explain">{{ item.grade.explanation }}</div>
+  {% if item.rubric_breakdown %}
+  <p class="label-over">Rubric breakdown</p>
+  <ul class="rubric-list">
+    {% for row in item.rubric_breakdown %}
+    <li>
+      <strong>{{ row.criterion }}</strong><br>
+      <span class="muted">{{ row.dimension_label }}:</span>
+      {% if row.score is not none %}
+        {{ "%.1f"|format(row.score) }}%
+      {% else %}
+        Not scored explicitly
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
   {% endif %}
 </div>
 {% endfor %}

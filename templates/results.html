@@ -17,21 +17,43 @@
 </section>
 {% endif %}
 
-{% for q in questions %}
+{% for item in result_items %}
 <section class="panel">
-  <h2 class="panel-title">Question {{ q.question_index + 1 }}</h2>
+  <h2 class="panel-title">Question {{ item.question.question_index + 1 }}</h2>
   <p class="label-over">Prompt</p>
-  <p class="question-text">{{ q.essay_question }}</p>
-  <p class="label-over">Your response</p>
-  <div class="prose explain response-box">{{ q.student_response or "—" }}</div>
-  {% if q.graded_state_p_json %}
-    {% set g = q.graded_state_p_json | fromjson %}
-    <p class="label-over">Grading</p>
+  <p class="question-text">{{ item.question.essay_question }}</p>
+
+  <p class="label-over">Your answer</p>
+  <div class="prose explain response-box">{{ item.question.student_response or "—" }}</div>
+
+  <p class="label-over">Reference answer guidance</p>
+  <div class="prose explain response-box">{{ item.reference_answer }}</div>
+
+  {% if item.grade %}
+    {% set g = item.grade %}
+    <p class="label-over">Question score</p>
     <p class="grade-line">
       <strong class="score-inline">{{ "%.1f"|format(g.overall_percent | default(0) | float) }}%</strong>
       {% if g.highly_satisfactory %}<span class="badge-ok">Highly satisfactory</span>{% endif %}
     </p>
     <div class="prose explain">{{ g.explanation }}</div>
+
+    {% if item.rubric_breakdown %}
+    <p class="label-over">Rubric breakdown</p>
+    <ul class="rubric-list">
+      {% for row in item.rubric_breakdown %}
+      <li>
+        <strong>{{ row.criterion }}</strong><br>
+        <span class="muted">{{ row.dimension_label }}:</span>
+        {% if row.score is not none %}
+          {{ "%.1f"|format(row.score) }}%
+        {% else %}
+          Not scored explicitly
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
   {% endif %}
 </section>
 {% endfor %}

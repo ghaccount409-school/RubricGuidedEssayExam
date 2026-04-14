@@ -85,7 +85,20 @@ The server listens on **http://127.0.0.1:8000** by default.
    ./run_dev.sh
    ```
 
-   **Option B — manual** (activate `.venv` first, then):
+   **Option B — auto-launch script** (creates `.venv`, installs deps once, and starts Uvicorn):
+
+   ```bash
+   chmod +x scripts/launch_project.sh
+   ./scripts/launch_project.sh
+   ```
+
+   If you also want to enable the virtual environment in your current shell session:
+
+   ```bash
+   source .venv/bin/activate
+   ```
+
+   **Option C — manual** (activate `.venv` first, then):
 
    ```bash
    export MOCK_LLM=1

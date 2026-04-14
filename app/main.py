@@ -2,9 +2,11 @@ import json
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -29,12 +31,53 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 
 @app.exception_handler(TogetherApiError)
 async def together_api_error_handler(request: Request, exc: TogetherApiError):
-    """Return HTML for Together.ai failures instead of a raw 500."""
+    """Return friendly HTML for Together.ai failures."""
     return templates.TemplateResponse(
         request,
-        "error_llm.html",
-        {"message": exc.message},
+        "error.html",
+        {"message": "We could not complete that action right now. Please try again."},
         status_code=exc.http_status,
+    )
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Render HTML error pages so users never see raw API JSON errors."""
+    status_code = exc.status_code if isinstance(exc.status_code, int) else 500
+    message = "We could not complete that action. Please try again."
+    if status_code == 404:
+        message = "We could not find that page."
+    elif status_code < 500:
+        message = "There was a problem with that request. Please check your input and try again."
+    return templates.TemplateResponse(
+        request,
+        "error.html",
+        {"message": message},
+        status_code=status_code,
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(
+    request: Request, exc: RequestValidationError
+):
+    """Return friendly HTML for validation issues."""
+    return templates.TemplateResponse(
+        request,
+        "error.html",
+        {"message": "Some required information is missing or invalid. Please try again."},
+        status_code=422,
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Final safety net to avoid exposing internal errors to users."""
+    return templates.TemplateResponse(
+        request,
+        "error.html",
+        {"message": "Something went wrong on our side. Please try again in a moment."},
+        status_code=500,
     )
 
 
@@ -86,6 +129,58 @@ def _earlier_graded_blob(db: Session, session: ExamSession, before_index: int) -
             f"Grading JSON: {r.graded_state_p_json or '(none)'}"
         )
     return "\n\n".join(parts)
+
+
+def _safe_json_dict(raw: str | None) -> dict:
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, dict) else {}
+    except json.JSONDecodeError:
+        return {}
+
+
+def _rubric_items(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            return [str(x).strip() for x in parsed if str(x).strip()]
+    except json.JSONDecodeError:
+        pass
+    text = str(raw).strip()
+    return [text] if text else []
+
+
+def _best_dimension_match(dimension_scores: dict, criterion: str, index: int) -> tuple[str, float | None]:
+    if not isinstance(dimension_scores, dict) or not dimension_scores:
+        return (f"Criterion {index + 1}", None)
+    criterion_words = {w for w in criterion.lower().split() if len(w) > 3}
+    for key, value in dimension_scores.items():
+        key_words = {w for w in str(key).lower().replace("_", " ").split() if len(w) > 3}
+        if criterion_words and key_words and criterion_words.intersection(key_words):
+            try:
+                return (str(key).replace("_", " ").title(), float(value))
+            except (TypeError, ValueError):
+                return (str(key).replace("_", " ").title(), None)
+    key = list(dimension_scores.keys())[index % len(dimension_scores)]
+    try:
+        return (str(key).replace("_", " ").title(), float(dimension_scores[key]))
+    except (TypeError, ValueError):
+        return (str(key).replace("_", " ").title(), None)
+
+
+def _reference_answer_text(grade_payload: dict, rubric: list[str]) -> str:
+    for key in ("reference_answer", "ideal_answer", "model_answer", "expected_answer"):
+        value = grade_payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    if not rubric:
+        return "A strong answer should be clear, accurate, and directly address the question prompt."
+    joined = "; ".join(rubric)
+    return f"A strong answer should cover: {joined}."
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -217,7 +312,12 @@ def exam_answer(
     db: Session = Depends(get_db),
 ):
     session = db.get(ExamSession, session_id)
-    if not session or session.status != "in_progress":
+    if not session:
+        raise HTTPException(404, "Exam not found")
+    # Idempotent: duplicate POST after exam is finished → send user to results (no error).
+    if session.status == "completed":
+        return RedirectResponse(url=f"/exam/{session_id}/results", status_code=303)
+    if session.status != "in_progress":
         raise HTTPException(400, "Invalid session")
 
     idx = session.current_question_index
@@ -239,6 +339,23 @@ def exam_answer(
     next_index = idx + 1
 
     if next_index < session.num_questions_planned:
+        # Idempotent: another request may have already created the next question (double-submit).
+        existing_next = (
+            db.query(ExamQuestion)
+            .filter(
+                ExamQuestion.session_id == session.id,
+                ExamQuestion.question_index == next_index,
+            )
+            .one_or_none()
+        )
+        if existing_next:
+            db.refresh(session)
+            if session.current_question_index != next_index:
+                session.current_question_index = next_index
+                db.add(session)
+                db.commit()
+            return RedirectResponse(url=f"/exam/{session_id}/question", status_code=303)
+
         # One API call: grade this answer + generate next question (was two calls)
         db.flush()
         try:
@@ -271,10 +388,24 @@ def exam_answer(
         db.add(nq)
         session.current_question_index = next_index
         db.add(session)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            return RedirectResponse(url=f"/exam/{session_id}/question", status_code=303)
         return RedirectResponse(url=f"/exam/{session_id}/question", status_code=303)
 
     # Last question: one API call for this answer’s grade + overall final grade (was two calls)
+    existing_fg = (
+        db.query(FinalGrade).filter(FinalGrade.session_id == session.id).one_or_none()
+    )
+    if existing_fg:
+        session.status = "completed"
+        session.final_grade_json = existing_fg.summary_json
+        db.add(session)
+        db.commit()
+        return RedirectResponse(url=f"/exam/{session_id}/results", status_code=303)
+
     db.flush()
     earlier = _earlier_graded_blob(db, session, idx)
     try:
@@ -303,7 +434,14 @@ def exam_answer(
     session.status = "completed"
     session.final_grade_json = fg.summary_json
     db.add(session)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Concurrent last answer: another request inserted final_grades first.
+        db.rollback()
+        if db.query(FinalGrade).filter(FinalGrade.session_id == session_id).one_or_none():
+            return RedirectResponse(url=f"/exam/{session_id}/results", status_code=303)
+        raise
 
     return RedirectResponse(url=f"/exam/{session_id}/results", status_code=303)
 
@@ -320,12 +458,37 @@ def exam_results(request: Request, session_id: int, db: Session = Depends(get_db
         .all()
     )
     fg = db.query(FinalGrade).filter(FinalGrade.session_id == session.id).one_or_none()
+    result_items = []
+    for q in rows:
+        grade_payload = _safe_json_dict(q.graded_state_p_json)
+        rubric = _rubric_items(q.grading_rubric)
+        dimension_scores = grade_payload.get("dimension_scores", {})
+        rubric_breakdown = []
+        for idx, criterion in enumerate(rubric):
+            label, score = _best_dimension_match(dimension_scores, criterion, idx)
+            rubric_breakdown.append(
+                {
+                    "criterion": criterion,
+                    "dimension_label": label,
+                    "score": score,
+                }
+            )
+        result_items.append(
+            {
+                "question": q,
+                "grade": grade_payload,
+                "rubric": rubric,
+                "rubric_breakdown": rubric_breakdown,
+                "reference_answer": _reference_answer_text(grade_payload, rubric),
+            }
+        )
     return templates.TemplateResponse(
         request,
         "results.html",
         {
             "session": session,
             "questions": rows,
+            "result_items": result_items,
             "final_grade": fg,
             "education_label": label_for_level(session.education_level),
             "llm_mode_label": "Mock" if session.use_mock_llm else "Production",
@@ -353,18 +516,28 @@ def professor_exam_detail(request: Request, session_id: int, db: Session = Depen
     fg = db.query(FinalGrade).filter(FinalGrade.session_id == session.id).one_or_none()
     graded = []
     for r in rows:
-        gp = None
-        if r.graded_state_p_json:
-            try:
-                gp = json.loads(r.graded_state_p_json)
-            except json.JSONDecodeError:
-                gp = None
-        rubric = r.grading_rubric
-        try:
-            rubric = json.loads(r.grading_rubric)
-        except json.JSONDecodeError:
-            pass
-        graded.append({"row": r, "grade": gp, "rubric": rubric})
+        gp = _safe_json_dict(r.graded_state_p_json)
+        rubric = _rubric_items(r.grading_rubric)
+        dimension_scores = gp.get("dimension_scores", {})
+        rubric_breakdown = []
+        for idx, criterion in enumerate(rubric):
+            label, score = _best_dimension_match(dimension_scores, criterion, idx)
+            rubric_breakdown.append(
+                {
+                    "criterion": criterion,
+                    "dimension_label": label,
+                    "score": score,
+                }
+            )
+        graded.append(
+            {
+                "row": r,
+                "grade": gp,
+                "rubric": rubric,
+                "rubric_breakdown": rubric_breakdown,
+                "reference_answer": _reference_answer_text(gp, rubric),
+            }
+        )
     return templates.TemplateResponse(
         request,
         "professor_detail.html",

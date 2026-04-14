@@ -44,6 +44,8 @@ def test_exam_start_rejects_invalid_education_level(client: TestClient):
         follow_redirects=False,
     )
     assert r.status_code == 400
+    assert "text/html" in r.headers.get("content-type", "")
+    assert "problem with that request" in r.text.lower()
 
 
 def test_full_exam_single_question_flow(client: TestClient):
@@ -77,6 +79,8 @@ def test_full_exam_single_question_flow(client: TestClient):
     res = client.get(f"/exam/{session_id}/results")
     assert res.status_code == 200
     assert b"84" in res.content or b"grade" in res.content.lower()
+    assert "Rubric breakdown" in res.text
+    assert "Reference answer guidance" in res.text
 
 
 def test_two_question_flow(client: TestClient):
@@ -131,8 +135,12 @@ def test_completed_session_question_redirects_to_results(client: TestClient):
 
 
 def test_exam_not_found(client: TestClient):
-    assert client.get("/exam/99999/question").status_code == 404
-    assert client.get("/exam/99999/results").status_code == 404
+    q = client.get("/exam/99999/question")
+    r = client.get("/exam/99999/results")
+    assert q.status_code == 404
+    assert r.status_code == 404
+    assert "text/html" in q.headers.get("content-type", "")
+    assert "we could not find that page" in q.text.lower()
 
 
 def test_professor_dashboard_and_detail(client: TestClient):
@@ -154,6 +162,8 @@ def test_professor_dashboard_and_detail(client: TestClient):
 
     det = client.get(f"/professor/exam/{session_id}")
     assert det.status_code == 200
+    assert "Reference answer guidance" in det.text
+    assert "Rubric breakdown" in det.text
 
     assert client.get("/professor/exam/99999").status_code == 404
 
@@ -173,5 +183,8 @@ def test_answer_invalid_session(client: TestClient):
     r = client.post(
         f"/exam/{session_id}/answer",
         data={"answer": "again", "seconds_on_question": ""},
+        follow_redirects=False,
     )
-    assert r.status_code == 400
+    # Idempotent: duplicate submit after exam completed → redirect to results (not 400).
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/exam/{session_id}/results"
