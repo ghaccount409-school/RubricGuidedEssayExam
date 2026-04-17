@@ -1,10 +1,12 @@
 import json
 import re
+import time
 from typing import Any
 
 import httpx
 
 from app.config import get_settings
+from app.perf_logging import log_performance_event
 from app.errors import TogetherApiError
 from app.education_levels import guidance_for_level, label_for_level
 from app.prompts import (
@@ -85,7 +87,14 @@ def _together_error_json_message(e: httpx.HTTPStatusError) -> str:
     return (e.response.text or "")[:300]
 
 
-def _chat_completion(messages: list[dict[str, str]], *, max_tokens: int = 4096) -> str:
+def _chat_completion(
+    messages: list[dict[str, str]],
+    *,
+    max_tokens: int = 4096,
+    exam_session_id: int | None = None,
+    llm_call_name: str = "together_chat",
+) -> str:
+    t0 = time.perf_counter()
     s = get_settings()
     api_key = str(s.together_api_key or "").strip()
     if not api_key:
@@ -152,6 +161,14 @@ def _chat_completion(messages: list[dict[str, str]], *, max_tokens: int = 4096) 
             f"Could not reach Together.ai: {e!s}",
             http_status=503,
         ) from e
+    finally:
+        log_performance_event(
+            "llm",
+            llm_call_name,
+            (time.perf_counter() - t0) * 1000,
+            exam_session_id=exam_session_id,
+            meta={"model": s.together_model, "endpoint": "chat/completions"},
+        )
 
     try:
         return data["choices"][0]["message"]["content"] or ""
@@ -169,6 +186,7 @@ def generate_question(
     education_level: str = "college",
     *,
     use_mock: bool = True,
+    exam_session_id: int | None = None,
 ) -> dict[str, Any]:
     if use_mock:
         return _mock_question_payload(professor_domain, question_index, education_level)
@@ -183,7 +201,9 @@ def generate_question(
         [
             {"role": "system", "content": "You output only valid JSON objects for exam software."},
             {"role": "user", "content": prompt},
-        ]
+        ],
+        exam_session_id=exam_session_id,
+        llm_call_name="generate_question",
     )
     return _parse_json_object(content)
 
@@ -200,6 +220,7 @@ def grade_and_next_question_combined(
     education_level: str = "college",
     *,
     use_mock: bool = True,
+    exam_session_id: int | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Single API call: grade current answer + generate next question (saves one round trip)."""
     if use_mock:
@@ -237,6 +258,8 @@ def grade_and_next_question_combined(
             {"role": "user", "content": prompt},
         ],
         max_tokens=8192,
+        exam_session_id=exam_session_id,
+        llm_call_name="grade_and_next_combined",
     )
     parsed = _parse_json_object(content)
     g = parsed.get("grading")
@@ -259,6 +282,7 @@ def grade_and_final_combined(
     education_level: str = "college",
     *,
     use_mock: bool = True,
+    exam_session_id: int | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Single API call: grade last answer + overall final grade (saves one round trip)."""
     if use_mock:
@@ -291,6 +315,8 @@ def grade_and_final_combined(
             {"role": "user", "content": prompt},
         ],
         max_tokens=8192,
+        exam_session_id=exam_session_id,
+        llm_call_name="grade_and_final_combined",
     )
     parsed = _parse_json_object(content)
     g = parsed.get("grading")
@@ -312,6 +338,7 @@ def grade_answer(
     education_level: str = "college",
     *,
     use_mock: bool = True,
+    exam_session_id: int | None = None,
 ) -> dict[str, Any]:
     if use_mock:
         return _mock_grade_payload()
@@ -337,7 +364,9 @@ def grade_answer(
         [
             {"role": "system", "content": "You are a fair, consistent exam grader. Output only valid JSON."},
             {"role": "user", "content": prompt},
-        ]
+        ],
+        exam_session_id=exam_session_id,
+        llm_call_name="grade_answer",
     )
     return _parse_json_object(content)
 
@@ -347,6 +376,7 @@ def final_grade(
     education_level: str = "college",
     *,
     use_mock: bool = True,
+    exam_session_id: int | None = None,
 ) -> dict[str, Any]:
     if use_mock:
         return _mock_final_payload()
@@ -364,6 +394,8 @@ def final_grade(
                 "content": "You synthesize exam results into one overall grade. Output only valid JSON.",
             },
             {"role": "user", "content": prompt},
-        ]
+        ],
+        exam_session_id=exam_session_id,
+        llm_call_name="final_grade",
     )
     return _parse_json_object(content)

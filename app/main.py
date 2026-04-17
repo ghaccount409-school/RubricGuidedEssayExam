@@ -1,16 +1,20 @@
 import json
+import re
+import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.database import ExamQuestion, ExamSession, FinalGrade, get_db, init_db
+from app.database import ExamQuestion, ExamSession, FinalGrade, PerformanceLog, get_db, init_db
+from app.perf_logging import log_performance_event
 from app.errors import TogetherApiError
 from app.education_levels import (
     ALLOWED_LEVEL_IDS,
@@ -25,8 +29,53 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 templates.env.filters["fromjson"] = lambda s: json.loads(s)
 templates.env.filters["level_label"] = label_for_level
 
+_EXAM_ID_IN_PATH = re.compile(r"^/(?:exam|professor/exam)/(\d+)(?:/|$)")
+
+
+def _exam_session_id_from_path(path: str) -> int | None:
+    m = _EXAM_ID_IN_PATH.match(path or "")
+    return int(m.group(1)) if m else None
+
+
+def _exam_session_id_for_http_log(path: str, response: Response | None) -> int | None:
+    sid = _exam_session_id_from_path(path)
+    if sid is not None:
+        return sid
+    if response is not None and path == "/exam/start":
+        loc = response.headers.get("location") or response.headers.get("Location")
+        if loc:
+            pth = urlparse(loc).path if "://" in loc else loc.split("?", 1)[0]
+            return _exam_session_id_from_path(pth)
+    return None
+
+
 app = FastAPI(title="Modular Oral-Style Exam System", version="0.1.0")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+
+@app.middleware("http")
+async def log_http_timing(request: Request, call_next):
+    if request.url.path.startswith("/static"):
+        return await call_next(request)
+    start = time.perf_counter()
+    status: int | str = "error"
+    path = request.url.path
+    response: Response | None = None
+    try:
+        response = await call_next(request)
+        status = response.status_code
+        return response
+    finally:
+        exam_session_id = _exam_session_id_for_http_log(path, response)
+        log_performance_event(
+            "http",
+            f"{request.method} {path}",
+            (time.perf_counter() - start) * 1000,
+            exam_session_id=exam_session_id,
+            meta={"status_code": status},
+        )
+
+POINTS_PER_QUESTION = 10.0
 
 
 @app.exception_handler(TogetherApiError)
@@ -295,6 +344,62 @@ def _overall_final_summary(final_grade_row: FinalGrade | None) -> str:
     return "Final summary is not available yet."
 
 
+def _points_from_percent(percent: float | int | None, points_possible: float) -> float:
+    if percent is None:
+        return 0.0
+    try:
+        pct = float(percent)
+    except (TypeError, ValueError):
+        pct = 0.0
+    pct = max(0.0, min(100.0, pct))
+    return round((pct / 100.0) * points_possible, 1)
+
+
+def _is_sqlite_locked_error(exc: Exception) -> bool:
+    return "database is locked" in str(exc).lower()
+
+
+@app.post("/exam/{session_id}/client-timing")
+def exam_client_timing(
+    session_id: int,
+    client_ms_wall: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    session = db.get(ExamSession, session_id)
+    if not session:
+        raise HTTPException(404, "Exam not found")
+    try:
+        ms = float(client_ms_wall)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Invalid timing value")
+    ms = max(0.0, min(ms, 3_600_000.0))
+    log_performance_event(
+        "client",
+        "generate_click_to_first_question_visible",
+        ms,
+        exam_session_id=session_id,
+        meta={
+            "description": "Wall-clock ms from Generate first question click until first question page runs in the browser.",
+        },
+    )
+    return Response(status_code=204)
+
+
+@app.get("/performance-log", response_class=HTMLResponse)
+def performance_log(request: Request, db: Session = Depends(get_db)):
+    rows = (
+        db.query(PerformanceLog)
+        .order_by(PerformanceLog.id.desc())
+        .limit(400)
+        .all()
+    )
+    return templates.TemplateResponse(
+        request,
+        "performance_log.html",
+        {"rows": rows},
+    )
+
+
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
     s = get_settings()
@@ -355,6 +460,7 @@ def exam_start(
             question_index=0,
             education_level=session.education_level,
             use_mock=session.use_mock_llm,
+            exam_session_id=session.id,
         )
     except TogetherApiError:
         db.rollback()
@@ -469,7 +575,13 @@ def exam_answer(
             return RedirectResponse(url=f"/exam/{session_id}/question", status_code=303)
 
         # One API call: grade this answer + generate next question (was two calls)
-        db.flush()
+        try:
+            db.flush()
+        except OperationalError as exc:
+            db.rollback()
+            if _is_sqlite_locked_error(exc):
+                return RedirectResponse(url=f"/exam/{session_id}/question", status_code=303)
+            raise
         try:
             prior = _prior_summary(session, db)
             grade_payload, payload = grade_and_next_question_combined(
@@ -483,6 +595,7 @@ def exam_answer(
                 seconds_on_question=sec,
                 education_level=session.education_level,
                 use_mock=session.use_mock_llm,
+                exam_session_id=session.id,
             )
         except TogetherApiError:
             db.rollback()
@@ -505,6 +618,11 @@ def exam_answer(
         except IntegrityError:
             db.rollback()
             return RedirectResponse(url=f"/exam/{session_id}/question", status_code=303)
+        except OperationalError as exc:
+            db.rollback()
+            if _is_sqlite_locked_error(exc):
+                return RedirectResponse(url=f"/exam/{session_id}/question", status_code=303)
+            raise
         return RedirectResponse(url=f"/exam/{session_id}/question", status_code=303)
 
     # Last question: one API call for this answer’s grade + overall final grade (was two calls)
@@ -518,7 +636,13 @@ def exam_answer(
         db.commit()
         return RedirectResponse(url=f"/exam/{session_id}/results", status_code=303)
 
-    db.flush()
+    try:
+        db.flush()
+    except OperationalError as exc:
+        db.rollback()
+        if _is_sqlite_locked_error(exc):
+            return RedirectResponse(url=f"/exam/{session_id}/question", status_code=303)
+        raise
     earlier = _earlier_graded_blob(db, session, idx)
     try:
         grade_payload, final_payload = grade_and_final_combined(
@@ -530,6 +654,7 @@ def exam_answer(
             sec,
             education_level=session.education_level,
             use_mock=session.use_mock_llm,
+            exam_session_id=session.id,
         )
     except TogetherApiError:
         db.rollback()
@@ -554,6 +679,13 @@ def exam_answer(
         if db.query(FinalGrade).filter(FinalGrade.session_id == session_id).one_or_none():
             return RedirectResponse(url=f"/exam/{session_id}/results", status_code=303)
         raise
+    except OperationalError as exc:
+        db.rollback()
+        if _is_sqlite_locked_error(exc):
+            if db.query(FinalGrade).filter(FinalGrade.session_id == session_id).one_or_none():
+                return RedirectResponse(url=f"/exam/{session_id}/results", status_code=303)
+            return RedirectResponse(url=f"/exam/{session_id}/question", status_code=303)
+        raise
 
     return RedirectResponse(url=f"/exam/{session_id}/results", status_code=303)
 
@@ -570,6 +702,10 @@ def exam_results(request: Request, session_id: int, db: Session = Depends(get_db
         .all()
     )
     fg = db.query(FinalGrade).filter(FinalGrade.session_id == session.id).one_or_none()
+    total_points_possible = round(max(1, session.num_questions_planned) * POINTS_PER_QUESTION, 1)
+    overall_points_earned = _points_from_percent(
+        fg.total_grade_percent if fg else 0.0, total_points_possible
+    )
     result_items = []
     for q in rows:
         grade_payload = _safe_json_dict(q.graded_state_p_json)
@@ -595,6 +731,10 @@ def exam_results(request: Request, session_id: int, db: Session = Depends(get_db
                 "rubric_feedback": _rubric_feedback_sections(
                     grade_payload, rubric_breakdown, rubric
                 ),
+                "points_earned": _points_from_percent(
+                    grade_payload.get("overall_percent"), POINTS_PER_QUESTION
+                ),
+                "points_possible": POINTS_PER_QUESTION,
             }
         )
     return templates.TemplateResponse(
@@ -606,6 +746,8 @@ def exam_results(request: Request, session_id: int, db: Session = Depends(get_db
             "result_items": result_items,
             "final_grade": fg,
             "overall_final_summary": _overall_final_summary(fg),
+            "overall_points_earned": overall_points_earned,
+            "overall_points_possible": total_points_possible,
             "education_label": label_for_level(session.education_level),
             "llm_mode_label": "Mock" if session.use_mock_llm else "Production",
         },
@@ -630,6 +772,10 @@ def professor_exam_detail(request: Request, session_id: int, db: Session = Depen
         .all()
     )
     fg = db.query(FinalGrade).filter(FinalGrade.session_id == session.id).one_or_none()
+    total_points_possible = round(max(1, session.num_questions_planned) * POINTS_PER_QUESTION, 1)
+    overall_points_earned = _points_from_percent(
+        fg.total_grade_percent if fg else 0.0, total_points_possible
+    )
     graded = []
     for r in rows:
         gp = _safe_json_dict(r.graded_state_p_json)
@@ -653,6 +799,10 @@ def professor_exam_detail(request: Request, session_id: int, db: Session = Depen
                 "rubric_breakdown": rubric_breakdown,
                 "reference_answer": _reference_answer_text(gp, rubric),
                 "rubric_feedback": _rubric_feedback_sections(gp, rubric_breakdown, rubric),
+                "points_earned": _points_from_percent(
+                    gp.get("overall_percent"), POINTS_PER_QUESTION
+                ),
+                "points_possible": POINTS_PER_QUESTION,
             }
         )
     return templates.TemplateResponse(
@@ -663,5 +813,7 @@ def professor_exam_detail(request: Request, session_id: int, db: Session = Depen
             "items": graded,
             "final_grade": fg,
             "overall_final_summary": _overall_final_summary(fg),
+            "overall_points_earned": overall_points_earned,
+            "overall_points_possible": total_points_possible,
         },
     )

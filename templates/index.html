@@ -97,5 +97,15 @@
     setMode('live');
   });
 })();
+
+(function () {
+  var form = document.getElementById('start-form');
+  if (!form) return;
+  form.addEventListener('submit', function () {
+    try {
+      sessionStorage.setItem('rgee_exam_gen_wall_ms', String(Date.now()));
+    } catch (e) {}
+  });
+})();
 </script>
 {% endblock %}

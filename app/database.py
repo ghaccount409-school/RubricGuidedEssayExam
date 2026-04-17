@@ -2,7 +2,18 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, create_engine, text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    create_engine,
+    event,
+    text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
 from app.config import get_settings
@@ -60,10 +71,43 @@ class FinalGrade(Base):
     session: Mapped["ExamSession"] = relationship(back_populates="final_grade_row")
 
 
+class PerformanceLog(Base):
+    """Diagnostics: HTTP request duration, LLM call duration, client-reported UX timing."""
+
+    __tablename__ = "performance_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    category: Mapped[str] = mapped_column(String(32), index=True)  # http | llm | client
+    event_name: Mapped[str] = mapped_column(String(512))
+    duration_ms: Mapped[float] = mapped_column(Float)
+    exam_session_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    meta_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 def _engine():
     url = get_settings().database_url
-    connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
-    return create_engine(url, connect_args=connect_args)
+    connect_args = (
+        {
+            "check_same_thread": False,
+            "timeout": 20,
+        }
+        if url.startswith("sqlite")
+        else {}
+    )
+    eng = create_engine(url, connect_args=connect_args)
+    if url.startswith("sqlite"):
+        @event.listens_for(eng, "connect")
+        def _set_sqlite_pragmas(dbapi_connection, _connection_record):
+            cur = dbapi_connection.cursor()
+            # WAL + busy timeout reduces "database is locked" during rapid writes.
+            cur.execute("PRAGMA journal_mode=WAL")
+            cur.execute("PRAGMA synchronous=NORMAL")
+            cur.execute("PRAGMA busy_timeout=20000")
+            cur.close()
+    return eng
 
 
 engine = _engine()

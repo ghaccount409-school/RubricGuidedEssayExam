@@ -13,6 +13,8 @@
 <section class="panel panel-success">
   <h2 class="panel-title">Overall grade</h2>
   <p class="score-big">{{ "%.1f"|format(final_grade.total_grade_percent) }}%</p>
+  <p class="label-over">Points</p>
+  <p class="grade-line"><strong class="score-inline">{{ "%.1f"|format(overall_points_earned) }} / {{ "%.1f"|format(overall_points_possible) }}</strong></p>
   <p class="label-over rubric-label rubric-label-summary">Overall final summary</p>
   <div class="prose explain response-box rubric-box rubric-box-summary">{{ overall_final_summary }}</div>
 </section>
@@ -37,6 +39,8 @@
       <strong class="score-inline">{{ "%.1f"|format(g.overall_percent | default(0) | float) }}%</strong>
       {% if g.highly_satisfactory %}<span class="badge-ok">Highly satisfactory</span>{% endif %}
     </p>
+    <p class="label-over">Points</p>
+    <p class="grade-line"><strong class="score-inline">{{ "%.1f"|format(item.points_earned) }} / {{ "%.1f"|format(item.points_possible) }}</strong></p>
     <div class="prose explain">{{ g.explanation }}</div>
 
     {% if item.rubric_breakdown %}

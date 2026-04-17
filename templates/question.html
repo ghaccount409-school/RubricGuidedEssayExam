@@ -55,4 +55,31 @@
     {% endif %}
   </div>
 </form>
+{% if question_number == 1 %}
+<script>
+(function () {
+  var sessionId = {{ session.id }};
+  var sentKey = 'rgee_timing_sent_' + sessionId;
+  try {
+    if (sessionStorage.getItem(sentKey)) return;
+    var start = sessionStorage.getItem('rgee_exam_gen_wall_ms');
+    if (!start) return;
+    var ms = Date.now() - parseInt(start, 10);
+    if (ms < 0 || ms > 3600000) return;
+    sessionStorage.removeItem('rgee_exam_gen_wall_ms');
+    var body = new URLSearchParams();
+    body.set('client_ms_wall', String(ms));
+    fetch('/exam/' + sessionId + '/client-timing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body,
+      credentials: 'same-origin',
+      keepalive: true
+    }).then(function () {
+      sessionStorage.setItem(sentKey, '1');
+    }).catch(function () {});
+  } catch (e) {}
+})();
+</script>
+{% endif %}
 {% endblock %}

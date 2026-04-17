@@ -85,6 +85,7 @@ def test_full_exam_single_question_flow(client: TestClient):
     assert "Areas for improvement" in res.text
     assert "Suggestions" in res.text
     assert "Overall final summary" in res.text
+    assert "Points" in res.text
 
 
 def test_two_question_flow(client: TestClient):
@@ -172,8 +173,66 @@ def test_professor_dashboard_and_detail(client: TestClient):
     assert "Areas for improvement" in det.text
     assert "Suggestions" in det.text
     assert "Overall final summary" in det.text
+    assert "Points" in det.text
 
     assert client.get("/professor/exam/99999").status_code == 404
+
+
+def test_performance_log_page(client: TestClient):
+    r = client.get("/performance-log")
+    assert r.status_code == 200
+    assert "Performance log" in r.text
+
+
+def test_http_log_links_exam_start_to_session(client: TestClient):
+    r0 = client.post(
+        "/exam/start",
+        data={
+            "student_id": "assoc-test",
+            "professor_domain": "Association test domain.",
+            "num_questions": "1",
+        },
+        follow_redirects=False,
+    )
+    assert r0.status_code == 303
+    session_id = int(r0.headers["location"].split("/exam/")[1].split("/")[0])
+
+    log_page = client.get("/performance-log")
+    assert log_page.status_code == 200
+    assert f'href="/professor/exam/{session_id}"' in log_page.text
+
+
+def test_client_timing_records_and_returns_204(client: TestClient):
+    r0 = client.post(
+        "/exam/start",
+        data={
+            "student_id": "timing-student",
+            "professor_domain": "Topic for timing test.",
+            "num_questions": "1",
+        },
+        follow_redirects=False,
+    )
+    assert r0.status_code == 303
+    session_id = int(r0.headers["location"].split("/exam/")[1].split("/")[0])
+
+    r = client.post(
+        f"/exam/{session_id}/client-timing",
+        data={"client_ms_wall": "1234.5"},
+    )
+    assert r.status_code == 204
+
+    log_page = client.get("/performance-log")
+    assert log_page.status_code == 200
+    assert "generate_click_to_first_question_visible" in log_page.text
+    assert "1234.5" in log_page.text or "1234" in log_page.text
+
+
+def test_client_timing_unknown_session_404(client: TestClient):
+    r = client.post(
+        "/exam/99999/client-timing",
+        data={"client_ms_wall": "100"},
+    )
+    assert r.status_code == 404
 
 
 def test_answer_invalid_session(client: TestClient):

@@ -72,6 +72,12 @@ body {
   flex-direction: column;
 }
 
+/* Wider layout for performance log so the table uses available screen width */
+.wrap.wrap--perf-log {
+  max-width: min(90rem, calc(100vw - 2.5rem));
+  width: 100%;
+}
+
 .main {
   flex: 1;
 }
@@ -707,6 +713,129 @@ button.btn-primary {
 
 .nowrap {
   white-space: nowrap;
+}
+
+.mono-tight {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.82rem;
+  word-break: break-word;
+}
+
+.meta-cell {
+  max-width: 16rem;
+  vertical-align: top;
+}
+
+.meta-json {
+  display: block;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  word-break: break-word;
+  color: var(--muted);
+}
+
+.perf-pill-http {
+  background: rgba(56, 189, 248, 0.12);
+  color: var(--accent);
+}
+
+.perf-pill-llm {
+  background: rgba(129, 140, 248, 0.15);
+  color: #c4b5fd;
+}
+
+.perf-pill-client {
+  background: rgba(52, 211, 153, 0.12);
+  color: var(--success);
+}
+
+/* Performance log: use viewport width, avoid a short inner scroll area */
+.perf-log-panel.panel-table {
+  overflow: visible;
+}
+
+.perf-log-scroll.table-scroll {
+  overflow-x: visible;
+  overflow-y: visible;
+  max-width: 100%;
+}
+
+.perf-log-table.data-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.perf-log-table col.perf-col-time {
+  width: 12%;
+}
+.perf-log-table col.perf-col-kind {
+  width: 8%;
+}
+.perf-log-table col.perf-col-event {
+  width: 24%;
+}
+.perf-log-table col.perf-col-ms {
+  width: 8%;
+}
+.perf-log-table col.perf-col-exam {
+  width: 7%;
+}
+.perf-log-table col.perf-col-meta {
+  width: 41%;
+}
+
+.perf-log-table th,
+.perf-log-table td {
+  min-width: 0;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.perf-log-table td.perf-col-ms,
+.perf-log-table td.perf-col-kind {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.perf-log-table td.perf-col-ms {
+  white-space: nowrap;
+}
+
+.perf-log-table td.perf-col-time {
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.perf-log-panel .meta-cell {
+  max-width: none;
+}
+
+.perf-log-panel .meta-json {
+  max-width: 100%;
+}
+
+@media (max-width: 720px) {
+  .wrap.wrap--perf-log {
+    max-width: 100%;
+    padding-left: 0.85rem;
+    padding-right: 0.85rem;
+  }
+
+  .perf-log-table.data-table {
+    font-size: 0.8rem;
+  }
+
+  .perf-log-table th,
+  .perf-log-table td {
+    padding: 0.55rem 0.5rem;
+  }
+
+  .perf-log-scroll.table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
 }
 
 .link-arrow {

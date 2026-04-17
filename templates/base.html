@@ -12,7 +12,7 @@
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <div class="page-bg" aria-hidden="true"></div>
-  <div class="wrap">
+  <div class="wrap{% block wrap_modifier %}{% endblock %}">
     <header class="site-header">
       <div class="brand-block">
         <a href="/" class="logo">RGEE</a>
@@ -21,6 +21,7 @@
       <nav class="main-nav" aria-label="Main">
         <a href="/" class="nav-link{% if request.url.path == '/' %} is-active{% endif %}">Take exam</a>
         <a href="/professor" class="nav-link{% if request.url.path.startswith('/professor') %} is-active{% endif %}">Instructor</a>
+        <a href="/performance-log" class="nav-link{% if request.url.path.startswith('/performance-log') %} is-active{% endif %}">Performance log</a>
       </nav>
     </header>
 
