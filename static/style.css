@@ -365,6 +365,52 @@ select {
   outline: none;
 }
 
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: none;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(8, 12, 22, 0.8);
+  backdrop-filter: blur(5px);
+}
+
+.loading-overlay.is-active {
+  display: grid;
+}
+
+.loading-card {
+  width: min(30rem, 95vw);
+  padding: 1.2rem 1.15rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius);
+  background: linear-gradient(160deg, rgba(24, 34, 54, 0.95), rgba(18, 26, 46, 0.96));
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+
+.loading-title {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.02rem;
+  font-weight: 700;
+}
+
+.loading-message {
+  margin: 0.55rem 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  opacity: 0.35;
+  transform: translateY(2px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.loading-message.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 /* Buttons */
 .btn {
   display: inline-flex;
