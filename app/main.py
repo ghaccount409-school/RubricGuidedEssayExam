@@ -574,7 +574,6 @@ def exam_answer(
                 db.commit()
             return RedirectResponse(url=f"/exam/{session_id}/question", status_code=303)
 
-        # One API call: grade this answer + generate next question (was two calls)
         try:
             db.flush()
         except OperationalError as exc:
@@ -582,6 +581,7 @@ def exam_answer(
             if _is_sqlite_locked_error(exc):
                 return RedirectResponse(url=f"/exam/{session_id}/question", status_code=303)
             raise
+
         try:
             prior = _prior_summary(session, db)
             grade_payload, payload = grade_and_next_question_combined(

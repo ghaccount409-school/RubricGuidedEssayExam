@@ -105,7 +105,7 @@ def _chat_completion(
         )
     url = f"{s.together_base_url.rstrip('/')}/chat/completions"
     body = {
-        "model": s.together_model,
+        "model": s.together_model_for_requests(),
         "messages": messages,
         "temperature": 0.4,
         "max_tokens": max_tokens,
@@ -167,7 +167,7 @@ def _chat_completion(
             llm_call_name,
             (time.perf_counter() - t0) * 1000,
             exam_session_id=exam_session_id,
-            meta={"model": s.together_model, "endpoint": "chat/completions"},
+            meta={"model": s.together_model_for_requests(), "endpoint": "chat/completions"},
         )
 
     try:

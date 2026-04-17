@@ -354,6 +354,17 @@ select {
   gap: 0.75rem;
 }
 
+/* After Generate is pressed: block further clicks until the browser navigates away */
+.form-card.form--submitting {
+  pointer-events: none;
+  opacity: 0.94;
+}
+
+/* Prefer inert when supported (no extra CSS needed; keeps focus from jumping) */
+.form-card[aria-busy="true"]:focus-within {
+  outline: none;
+}
+
 /* Buttons */
 .btn {
   display: inline-flex;
@@ -766,22 +777,25 @@ button.btn-primary {
 }
 
 .perf-log-table col.perf-col-time {
-  width: 12%;
+  width: 10%;
 }
 .perf-log-table col.perf-col-kind {
-  width: 8%;
-}
-.perf-log-table col.perf-col-event {
-  width: 24%;
-}
-.perf-log-table col.perf-col-ms {
-  width: 8%;
-}
-.perf-log-table col.perf-col-exam {
   width: 7%;
 }
+.perf-log-table col.perf-col-event {
+  width: 20%;
+}
+.perf-log-table col.perf-col-ms {
+  width: 7%;
+}
+.perf-log-table col.perf-col-exam {
+  width: 6%;
+}
+.perf-log-table col.perf-col-student {
+  width: 12%;
+}
 .perf-log-table col.perf-col-meta {
-  width: 41%;
+  width: 38%;
 }
 
 .perf-log-table th,

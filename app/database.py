@@ -84,6 +84,7 @@ class PerformanceLog(Base):
     event_name: Mapped[str] = mapped_column(String(512))
     duration_ms: Mapped[float] = mapped_column(Float)
     exam_session_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    student_id: Mapped[str | None] = mapped_column(String(256), nullable=True, index=True)
     meta_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
@@ -138,6 +139,15 @@ def _migrate_sqlite_schema() -> None:
             msg = str(e).lower()
             if "duplicate column" not in msg and "already exists" not in msg:
                 raise
+        try:
+            conn.execute(text("ALTER TABLE performance_logs ADD COLUMN student_id VARCHAR(256)"))
+        except Exception as e:
+            msg = str(e).lower()
+            if "duplicate column" not in msg and "already exists" not in msg:
+                if "no such table" in msg:
+                    pass
+                else:
+                    raise
 
 
 def init_db() -> None:

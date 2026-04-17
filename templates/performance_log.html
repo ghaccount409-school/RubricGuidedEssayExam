@@ -8,6 +8,14 @@
     Request timings, Together.ai call duration (production mode), and browser-reported time from
     <strong>Generate first question</strong> until the first question page loads. This view is for development and demos; in production it will likely be restricted to developers.
   </p>
+  <aside class="callout callout-tip perf-log-readme" role="note">
+    <strong>Reading the log:</strong>
+    Each time you click Generate, the server creates a <em>new</em> exam (new Exam id)—nothing accumulates from prior attempts.
+    Compare rows with the same <strong>Exam</strong> link: <strong>HTTP POST /exam/start</strong> is full server time for that attempt (includes the first question step);
+    in Production, the <strong>LLM generate_question</strong> line is the Together.ai call for that same id.
+    <strong>Browser</strong> is wall-clock in the client (click → first question page); it should be close to HTTP time plus redirect.
+    If you see <strong>two POST /exam/start</strong> rows within the same second with <strong>different</strong> Exam ids, that was duplicate submits (e.g. double-click) before the button locks—each row is a separate generation.
+  </aside>
 </section>
 
 <div class="panel panel-table perf-log-panel">
@@ -19,6 +27,7 @@
         <col class="perf-col-event">
         <col class="perf-col-ms">
         <col class="perf-col-exam">
+        <col class="perf-col-student">
         <col class="perf-col-meta">
       </colgroup>
       <thead>
@@ -28,6 +37,7 @@
           <th scope="col">Event</th>
           <th scope="col" class="nowrap">Duration (ms)</th>
           <th scope="col">Exam</th>
+          <th scope="col">Student</th>
           <th scope="col">Details</th>
         </tr>
       </thead>
@@ -55,10 +65,11 @@
             —
             {% endif %}
           </td>
+          <td class="perf-col-student">{% if row.student_id %}{{ row.student_id }}{% else %}—{% endif %}</td>
           <td class="meta-cell perf-col-meta">{% if row.meta_json %}<code class="meta-json">{{ row.meta_json }}</code>{% else %}—{% endif %}</td>
         </tr>
         {% else %}
-        <tr><td colspan="6" class="muted center">No log entries yet. Use the app, then refresh this page.</td></tr>
+        <tr><td colspan="7" class="muted center">No log entries yet. Use the app, then refresh this page.</td></tr>
         {% endfor %}
       </tbody>
     </table>

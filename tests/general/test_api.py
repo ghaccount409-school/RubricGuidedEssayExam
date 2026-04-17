@@ -200,6 +200,7 @@ def test_http_log_links_exam_start_to_session(client: TestClient):
     log_page = client.get("/performance-log")
     assert log_page.status_code == 200
     assert f'href="/professor/exam/{session_id}"' in log_page.text
+    assert "assoc-test" in log_page.text
 
 
 def test_client_timing_records_and_returns_204(client: TestClient):
@@ -225,6 +226,7 @@ def test_client_timing_records_and_returns_204(client: TestClient):
     assert log_page.status_code == 200
     assert "generate_click_to_first_question_visible" in log_page.text
     assert "1234.5" in log_page.text or "1234" in log_page.text
+    assert "timing-student" in log_page.text
 
 
 def test_client_timing_unknown_session_404(client: TestClient):

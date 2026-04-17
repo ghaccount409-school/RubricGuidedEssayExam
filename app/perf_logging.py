@@ -4,7 +4,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.database import PerformanceLog, SessionLocal
+from app.database import ExamSession, PerformanceLog, SessionLocal
 
 MAX_LOG_ROWS = 2000
 
@@ -33,10 +33,19 @@ def log_performance_event(
     duration_ms: float,
     *,
     exam_session_id: int | None = None,
+    student_id: str | None = None,
     meta: dict[str, Any] | None = None,
 ) -> None:
     db = SessionLocal()
     try:
+        resolved_student: str | None = None
+        if student_id is not None:
+            st = str(student_id).strip()
+            resolved_student = st if st else None
+        if exam_session_id is not None and not resolved_student:
+            sess = db.get(ExamSession, exam_session_id)
+            if sess is not None:
+                resolved_student = sess.student_id
         meta_s: str | None = None
         if meta:
             meta_s = json.dumps(meta, ensure_ascii=False)
@@ -47,6 +56,7 @@ def log_performance_event(
             event_name=event_name[:512],
             duration_ms=float(duration_ms),
             exam_session_id=exam_session_id,
+            student_id=resolved_student,
             meta_json=meta_s,
         )
         db.add(row)

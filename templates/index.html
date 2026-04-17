@@ -70,7 +70,7 @@
   </div>
 
   <div class="form-actions">
-    <button type="submit" class="btn btn-primary">Generate first question →</button>
+    <button type="submit" class="btn btn-primary" id="btn-generate-exam">Generate first question →</button>
   </div>
 </form>
 
@@ -101,11 +101,50 @@
 (function () {
   var form = document.getElementById('start-form');
   if (!form) return;
-  form.addEventListener('submit', function () {
-    try {
-      sessionStorage.setItem('rgee_exam_gen_wall_ms', String(Date.now()));
-    } catch (e) {}
-  });
+  var btn = document.getElementById('btn-generate-exam');
+  var btnLabel = btn ? btn.textContent : '';
+  var locked = false;
+
+  function armGenerateGuard() {
+    if (locked) return;
+    locked = true;
+    form.classList.add('form--submitting');
+    form.setAttribute('aria-busy', 'true');
+    if (btn) {
+      btn.disabled = true;
+      btn.setAttribute('aria-busy', 'true');
+      btn.textContent = 'Generating…';
+    }
+  }
+
+  if (btn) {
+    btn.addEventListener(
+      'click',
+      function (ev) {
+        if (locked) {
+          ev.preventDefault();
+          ev.stopPropagation();
+        }
+      },
+      true
+    );
+  }
+
+  form.addEventListener(
+    'submit',
+    function (ev) {
+      if (locked) {
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        return;
+      }
+      armGenerateGuard();
+      try {
+        sessionStorage.setItem('rgee_exam_gen_wall_ms', String(Date.now()));
+      } catch (e) {}
+    },
+    true
+  );
 })();
 </script>
 {% endblock %}
