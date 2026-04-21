@@ -949,7 +949,6 @@ def exam_answer(
     request: Request,
     session_id: int,
     answer: str = Form(...),
-    seconds_on_question: str = Form(""),
     db: Session = Depends(get_db),
 ):
     session = db.get(ExamSession, session_id)
@@ -971,8 +970,6 @@ def exam_answer(
         raise HTTPException(404, "Question not found")
 
     sec = None
-    if seconds_on_question.strip().isdigit():
-        sec = int(seconds_on_question.strip())
 
     q.student_response = answer.strip()
     q.seconds_on_question = sec

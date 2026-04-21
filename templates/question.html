@@ -106,11 +106,6 @@
     <label for="answer">Essay response <span class="req">*</span></label>
     <textarea id="answer" name="answer" required rows="12" placeholder="Write your response here."></textarea>
   </div>
-  <div class="field field-inline">
-    <label for="seconds_on_question">Time spent (optional)</label>
-    <input type="text" id="seconds_on_question" name="seconds_on_question" inputmode="numeric" pattern="[0-9]*" placeholder="Seconds, e.g. 420">
-    <span class="hint">Helps instructors see pacing; not graded.</span>
-  </div>
   <div class="form-actions">
     {% if question_number < total_planned %}
       <button type="submit" class="btn btn-primary">Submit &amp; next question</button>
