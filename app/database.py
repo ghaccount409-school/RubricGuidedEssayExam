@@ -58,6 +58,11 @@ class ExamQuestion(Base):
     student_response: Mapped[str | None] = mapped_column(Text, nullable=True)
     seconds_on_question: Mapped[int | None] = mapped_column(Integer, nullable=True)
     graded_state_p_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # state P from spec
+    hints_used: Mapped[int] = mapped_column(Integer, default=0)
+    latest_hint: Mapped[str | None] = mapped_column(Text, nullable=True)
+    hint_history_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    latest_ai_helper_reply: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_helper_history_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     session: Mapped["ExamSession"] = relationship(back_populates="questions")
 
@@ -156,6 +161,51 @@ def _migrate_sqlite_schema() -> None:
                 raise
         try:
             conn.execute(text("ALTER TABLE performance_logs ADD COLUMN student_id VARCHAR(256)"))
+        except Exception as e:
+            msg = str(e).lower()
+            if "duplicate column" not in msg and "already exists" not in msg:
+                if "no such table" in msg:
+                    pass
+                else:
+                    raise
+        try:
+            conn.execute(text("ALTER TABLE exam_questions ADD COLUMN hints_used INTEGER NOT NULL DEFAULT 0"))
+        except Exception as e:
+            msg = str(e).lower()
+            if "duplicate column" not in msg and "already exists" not in msg:
+                if "no such table" in msg:
+                    pass
+                else:
+                    raise
+        try:
+            conn.execute(text("ALTER TABLE exam_questions ADD COLUMN latest_hint TEXT"))
+        except Exception as e:
+            msg = str(e).lower()
+            if "duplicate column" not in msg and "already exists" not in msg:
+                if "no such table" in msg:
+                    pass
+                else:
+                    raise
+        try:
+            conn.execute(text("ALTER TABLE exam_questions ADD COLUMN hint_history_json TEXT"))
+        except Exception as e:
+            msg = str(e).lower()
+            if "duplicate column" not in msg and "already exists" not in msg:
+                if "no such table" in msg:
+                    pass
+                else:
+                    raise
+        try:
+            conn.execute(text("ALTER TABLE exam_questions ADD COLUMN latest_ai_helper_reply TEXT"))
+        except Exception as e:
+            msg = str(e).lower()
+            if "duplicate column" not in msg and "already exists" not in msg:
+                if "no such table" in msg:
+                    pass
+                else:
+                    raise
+        try:
+            conn.execute(text("ALTER TABLE exam_questions ADD COLUMN ai_helper_history_json TEXT"))
         except Exception as e:
             msg = str(e).lower()
             if "duplicate column" not in msg and "already exists" not in msg:

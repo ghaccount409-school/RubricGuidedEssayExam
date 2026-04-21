@@ -11,22 +11,22 @@ GRADING_STRICTNESS_OPTIONS: list[dict[str, Any]] = [
     {
         "id": "easy",
         "label": "Easy",
-        "hint": "Generous scoring; credit partial understanding.",
+        "hint": "Generous scoring; credit partial understanding. Hints: Unlimited.",
     },
     {
         "id": "balanced",
         "label": "Balanced",
-        "hint": "Fair, typical exam expectations.",
+        "hint": "Fair, typical exam expectations. Hints: 3 per exam.",
     },
     {
         "id": "strict",
         "label": "Strict",
-        "hint": "High bar; gaps and vagueness cost more.",
+        "hint": "High bar; gaps and vagueness cost more. Hints: 1 per exam.",
     },
     {
         "id": "insane",
         "label": "Insane",
-        "hint": "Maximum rigor; near-perfect answers only score very high.",
+        "hint": "Maximum rigor; near-perfect answers only score very high. Hints: 0 (no hints).",
     },
 ]
 
@@ -79,3 +79,15 @@ def mock_percent_for_strictness(mode: str) -> float:
     if m == "insane":
         return 68.0
     return 84.0
+
+
+def hints_limit_for_strictness(mode: str) -> int | None:
+    """Per-exam hint cap by strictness. None means unlimited."""
+    m = normalize_strictness(mode)
+    if m == "easy":
+        return None
+    if m == "balanced":
+        return 3
+    if m == "strict":
+        return 1
+    return 0

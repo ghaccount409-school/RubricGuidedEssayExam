@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+{% block body %}
+<section class="hero">
+  <h1 class="hero-title">Rubric-Guided Essay Exams</h1>
+  <p class="hero-lead">
+    Choose how you want to continue: start a new exam session or resume one that is still in progress.
+  </p>
+</section>
+
+<section class="panel form-card">
+  <h2 class="panel-title">Get started</h2>
+  <div class="form-actions">
+    <a href="/start" class="btn btn-primary">Start exam</a>
+    <a href="/resume" class="btn btn-secondary">Resume exam</a>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Resume exam{% endblock %}
+{% block body %}
+<section class="hero hero-compact">
+  <h1 class="hero-title">Resume your in-progress exam</h1>
+  <p class="hero-lead">
+    Enter your student ID to continue the latest exam session that is still in progress.
+  </p>
+</section>
+
+<form class="panel form-card" method="post" action="/resume">
+  <h2 class="panel-title">Find your exam</h2>
+  <div class="field field-inline">
+    <label for="student_id">Student ID <span class="req">*</span></label>
+    <input
+      type="text"
+      id="student_id"
+      name="student_id"
+      required
+      maxlength="256"
+      value="{{ student_id }}"
+      placeholder="e.g. jdoe_001"
+      autocomplete="username"
+    >
+  </div>
+  {% if error_message %}
+  <p class="muted" style="color:#fca5a5;">{{ error_message }}</p>
+  {% endif %}
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Resume exam</button>
+  </div>
+</form>
+{% endblock %}
