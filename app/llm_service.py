@@ -22,6 +22,7 @@ from app.prompts import (
     FINAL_GRADE_TEMPLATE,
     GRADE_RESPONSE_TEMPLATE,
     QUESTION_GENERATION_TEMPLATE,
+    SAFE_HINT_TEMPLATE,
 )
 
 
@@ -91,6 +92,13 @@ def _mock_final_payload(grading_strictness: str = DEFAULT_GRADING_STRICTNESS) ->
         "total_grade_percent": pct,
         "explanation": f"[MOCK] Demo overall grade for “{label}” strictness (equal weight per question in mock).",
         "weighting_notes": "Equal weight per question in mock.",
+    }
+
+
+def _mock_hint_payload() -> dict[str, Any]:
+    return {
+        "status": "ok",
+        "hint": "[MOCK Hint] Start by defining the core concept in one sentence, then connect it to one concrete example from the prompt.",
     }
 
 
@@ -429,5 +437,46 @@ def final_grade(
         ],
         exam_session_id=exam_session_id,
         llm_call_name="final_grade",
+    )
+    return _parse_json_object(content)
+
+
+def generate_safe_hint(
+    *,
+    essay_question: str,
+    background_information: str,
+    grading_rubric: str,
+    student_text: str,
+    education_level: str = "college",
+    use_mock: bool = True,
+    exam_session_id: int | None = None,
+) -> dict[str, Any]:
+    if use_mock:
+        return _mock_hint_payload()
+
+    rubric_display = grading_rubric
+    try:
+        rubric_list = json.loads(grading_rubric)
+        if isinstance(rubric_list, list):
+            rubric_display = "\n".join(f"- {x}" for x in rubric_list)
+    except json.JSONDecodeError:
+        pass
+
+    prompt = SAFE_HINT_TEMPLATE.format(
+        education_level_label=label_for_level(education_level),
+        education_level_guidance=guidance_for_level(education_level),
+        essay_question=essay_question,
+        background_information=background_information,
+        grading_rubric=rubric_display,
+        student_text=student_text or "(empty)",
+    )
+    content = _chat_completion(
+        [
+            {"role": "system", "content": "You are a secure hint generator. Output only valid JSON."},
+            {"role": "user", "content": prompt},
+        ],
+        max_tokens=500,
+        exam_session_id=exam_session_id,
+        llm_call_name="generate_safe_hint",
     )
     return _parse_json_object(content)

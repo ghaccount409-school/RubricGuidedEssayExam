@@ -6,10 +6,11 @@ from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -26,9 +27,15 @@ from app.grading_strictness import (
     ALLOWED_STRICTNESS_IDS,
     DEFAULT_GRADING_STRICTNESS,
     GRADING_STRICTNESS_OPTIONS,
+    hints_limit_for_strictness,
     label_for_strictness,
 )
-from app.llm_service import generate_question, grade_and_final_combined, grade_and_next_question_combined
+from app.llm_service import (
+    generate_question,
+    generate_safe_hint,
+    grade_and_final_combined,
+    grade_and_next_question_combined,
+)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -366,6 +373,65 @@ def _is_sqlite_locked_error(exc: Exception) -> bool:
     return "database is locked" in str(exc).lower()
 
 
+def _session_hints_used(db: Session, session_id: int) -> int:
+    val = (
+        db.query(func.coalesce(func.sum(ExamQuestion.hints_used), 0))
+        .filter(ExamQuestion.session_id == session_id)
+        .scalar()
+    )
+    return int(val or 0)
+
+
+def _hint_budget_status(db: Session, session: ExamSession) -> dict[str, int | bool | None]:
+    limit = hints_limit_for_strictness(session.grading_strictness)
+    used = _session_hints_used(db, session.id)
+    remaining = None if limit is None else max(0, limit - used)
+    exhausted = False if limit is None else used >= limit
+    return {"limit": limit, "used": used, "remaining": remaining, "exhausted": exhausted}
+
+
+def _looks_prompt_injection(text: str) -> bool:
+    t = (text or "").strip().lower()
+    if not t:
+        return False
+    red_flags = (
+        "ignore previous",
+        "disregard previous",
+        "ignore all instructions",
+        "reveal the answer",
+        "just give me the answer",
+        "system prompt",
+        "bypass",
+    )
+    return any(flag in t for flag in red_flags)
+
+
+def _hint_history_list(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [str(item).strip() for item in parsed if str(item).strip()]
+
+
+def _save_hint_to_history(q: ExamQuestion, hint_text: str) -> None:
+    history = _hint_history_list(q.hint_history_json)
+    history.append(hint_text)
+    q.hint_history_json = json.dumps(history, ensure_ascii=False)
+    q.latest_hint = hint_text
+
+
+def _save_ai_reply_to_history(q: ExamQuestion, reply_text: str) -> None:
+    history = _hint_history_list(q.ai_helper_history_json)
+    history.append(reply_text)
+    q.ai_helper_history_json = json.dumps(history, ensure_ascii=False)
+    q.latest_ai_helper_reply = reply_text
+
+
 @app.post("/exam/{session_id}/client-timing")
 def exam_client_timing(
     session_id: int,
@@ -521,6 +587,9 @@ def exam_question(request: Request, session_id: int, db: Session = Depends(get_d
     except json.JSONDecodeError:
         rubric_display = q.grading_rubric
 
+    hint_state = _hint_budget_status(db, session)
+    hint_history = _hint_history_list(q.hint_history_json)
+    ai_helper_history = _hint_history_list(q.ai_helper_history_json)
     return templates.TemplateResponse(
         request,
         "question.html",
@@ -533,7 +602,216 @@ def exam_question(request: Request, session_id: int, db: Session = Depends(get_d
             "education_label": label_for_level(session.education_level),
             "llm_mode_label": "Mock" if session.use_mock_llm else "Production",
             "grading_label": label_for_strictness(session.grading_strictness),
+            "hint_limit": hint_state["limit"],
+            "hint_used": hint_state["used"],
+            "hint_remaining": hint_state["remaining"],
+            "hint_exhausted": hint_state["exhausted"],
+            "latest_hint": q.latest_hint,
+            "hint_history": hint_history,
+            "ai_helper_history": ai_helper_history,
         },
+    )
+
+
+@app.post("/exam/{session_id}/hint", response_class=HTMLResponse)
+def exam_hint(
+    request: Request,
+    session_id: int,
+    answer_draft: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    session = db.get(ExamSession, session_id)
+    if not session:
+        raise HTTPException(404, "Exam not found")
+    if session.status != "in_progress":
+        return RedirectResponse(url=f"/exam/{session_id}/results", status_code=303)
+
+    idx = session.current_question_index
+    q = (
+        db.query(ExamQuestion)
+        .filter(ExamQuestion.session_id == session.id, ExamQuestion.question_index == idx)
+        .one_or_none()
+    )
+    if not q:
+        raise HTTPException(404, "Question not found")
+
+    hint_state = _hint_budget_status(db, session)
+    if hint_state["exhausted"]:
+        q.latest_hint = "No hints remaining for your selected grading strictness."
+        db.add(q)
+        db.commit()
+        return RedirectResponse(url=f"/exam/{session_id}/question", status_code=303)
+
+    student_text = (answer_draft or "").strip()
+    if _looks_prompt_injection(student_text):
+        q.latest_hint = "Irrelevant question asked. Please ask for help related to this exam question."
+        q.hints_used = int(q.hints_used or 0) + 1
+        db.add(q)
+        db.commit()
+        return RedirectResponse(url=f"/exam/{session_id}/question", status_code=303)
+
+    try:
+        hint_payload = generate_safe_hint(
+            essay_question=q.essay_question,
+            background_information=q.background_information,
+            grading_rubric=q.grading_rubric,
+            student_text=student_text or q.essay_question,
+            education_level=session.education_level,
+            use_mock=session.use_mock_llm,
+            exam_session_id=session.id,
+        )
+    except TogetherApiError:
+        db.rollback()
+        raise
+
+    hint_status = str(hint_payload.get("status", "ok")).strip().lower()
+    hint_text = str(hint_payload.get("hint", "")).strip()
+    if hint_status == "irrelevant":
+        hint_text = "Irrelevant question asked. Please ask for help related to this exam question."
+    if not hint_text:
+        hint_text = "Focus on the key terms in the question, then explain one concept in your own words first."
+    q.latest_hint = hint_text[:1000]
+    q.hints_used = int(q.hints_used or 0) + 1
+    db.add(q)
+    db.commit()
+    return RedirectResponse(url=f"/exam/{session_id}/question", status_code=303)
+
+
+@app.post("/exam/{session_id}/hint-json")
+def exam_hint_json(
+    session_id: int,
+    answer_draft: str = Form(""),
+    hint_query: str = Form(""),
+    selected_hint: str = Form(""),
+    mode: str = Form("hint"),
+    db: Session = Depends(get_db),
+):
+    session = db.get(ExamSession, session_id)
+    if not session:
+        raise HTTPException(404, "Exam not found")
+    if session.status != "in_progress":
+        raise HTTPException(400, "Exam is not active")
+
+    idx = session.current_question_index
+    q = (
+        db.query(ExamQuestion)
+        .filter(ExamQuestion.session_id == session.id, ExamQuestion.question_index == idx)
+        .one_or_none()
+    )
+    if not q:
+        raise HTTPException(404, "Question not found")
+
+    hint_state = _hint_budget_status(db, session)
+    existing_history = _hint_history_list(q.hint_history_json)
+    existing_ai_history = _hint_history_list(q.ai_helper_history_json)
+    mode_key = (mode or "hint").strip().lower()
+    if mode_key == "hint" and hint_state["exhausted"]:
+        return JSONResponse(
+            {
+                "ok": False,
+                "hint": "No hints remaining for your selected grading strictness.",
+                "hint_used": int(hint_state["used"]),
+                "hint_limit": hint_state["limit"],
+                "hint_remaining": hint_state["remaining"],
+                "hint_exhausted": True,
+                "hint_history": existing_history,
+                "ai_helper_history": existing_ai_history,
+                "mode": mode_key,
+            },
+            status_code=200,
+        )
+
+    query_text = (hint_query or "").strip()
+    query_words = query_text.split()
+    if len(query_words) > 100:
+        return JSONResponse(
+            {
+                "ok": False,
+                "hint": "Please keep hint questions to 100 words or fewer.",
+                "hint_used": int(hint_state["used"]),
+                "hint_limit": hint_state["limit"],
+                "hint_remaining": hint_state["remaining"],
+                "hint_exhausted": False,
+                "hint_history": existing_history,
+                "ai_helper_history": existing_ai_history,
+                "mode": mode_key,
+            },
+            status_code=200,
+        )
+
+    selected_hint_text = (selected_hint or "").strip()
+    student_text = " ".join(
+        part for part in ((answer_draft or "").strip(), selected_hint_text, query_text) if part
+    )
+    if _looks_prompt_injection(student_text):
+        response_text = "Irrelevant question asked. Please ask for help related to this exam question."
+        if mode_key == "chat":
+            _save_ai_reply_to_history(q, response_text)
+        else:
+            _save_hint_to_history(q, response_text)
+            q.hints_used = int(q.hints_used or 0) + 1
+        db.add(q)
+        db.commit()
+        after = _hint_budget_status(db, session)
+        updated_history = _hint_history_list(q.hint_history_json)
+        updated_ai_history = _hint_history_list(q.ai_helper_history_json)
+        return JSONResponse(
+            {
+                "ok": True,
+                "hint": response_text,
+                "hint_used": int(after["used"]),
+                "hint_limit": after["limit"],
+                "hint_remaining": after["remaining"],
+                "hint_exhausted": bool(after["exhausted"]),
+                "hint_history": updated_history,
+                "ai_helper_history": updated_ai_history,
+                "mode": mode_key,
+            }
+        )
+
+    try:
+        hint_payload = generate_safe_hint(
+            essay_question=q.essay_question,
+            background_information=q.background_information,
+            grading_rubric=q.grading_rubric,
+            student_text=student_text or q.essay_question,
+            education_level=session.education_level,
+            use_mock=session.use_mock_llm,
+            exam_session_id=session.id,
+        )
+    except TogetherApiError:
+        db.rollback()
+        raise
+
+    hint_status = str(hint_payload.get("status", "ok")).strip().lower()
+    hint_text = str(hint_payload.get("hint", "")).strip()
+    if hint_status == "irrelevant":
+        hint_text = "Irrelevant question asked. Please ask for help related to this exam question."
+    if not hint_text:
+        hint_text = "Focus on the key terms in the question, then explain one concept in your own words first."
+    safe_text = hint_text[:1000]
+    if mode_key == "chat":
+        _save_ai_reply_to_history(q, safe_text)
+    else:
+        _save_hint_to_history(q, safe_text)
+        q.hints_used = int(q.hints_used or 0) + 1
+    db.add(q)
+    db.commit()
+    after = _hint_budget_status(db, session)
+    updated_history = _hint_history_list(q.hint_history_json)
+    updated_ai_history = _hint_history_list(q.ai_helper_history_json)
+    return JSONResponse(
+        {
+            "ok": True,
+            "hint": safe_text,
+            "hint_used": int(after["used"]),
+            "hint_limit": after["limit"],
+            "hint_remaining": after["remaining"],
+            "hint_exhausted": bool(after["exhausted"]),
+            "hint_history": updated_history,
+            "ai_helper_history": updated_ai_history,
+            "mode": mode_key,
+        }
     )
 
 
