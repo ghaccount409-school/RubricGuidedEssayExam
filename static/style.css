@@ -1117,6 +1117,23 @@ button.btn-primary {
   transform: rotate(-135deg);
 }
 
+.home-get-started {
+  text-align: center;
+}
+
+.home-actions {
+  justify-content: center;
+}
+
+.home-hero {
+  text-align: center;
+}
+
+.home-hero .hero-lead {
+  margin-left: auto;
+  margin-right: auto;
+}
+
 /* Legacy helpers */
 .badge {
   display: inline-block;
