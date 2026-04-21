@@ -7,6 +7,7 @@
     <span class="pill pill-student">{{ session.student_id }}</span>
     <span class="pill pill-level">{{ session.education_level | level_label }}</span>
     <span class="pill pill-llm">{% if session.use_mock_llm %}Mock LLM{% else %}Production{% endif %}</span>
+    <span class="pill pill-strictness">{{ grading_label }}</span>
     <span class="status-pill status-{{ session.status }}">{{ session.status }}</span>
   </p>
 </section>

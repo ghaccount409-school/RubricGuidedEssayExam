@@ -35,6 +35,12 @@ Level: {education_level_label}
 Guidance: {education_level_guidance}
 ---
 
+GRADING STRICTNESS (how harshly to score this answer):
+---
+Mode: {grading_strictness_label}
+{grading_strictness_guidance}
+---
+
 BACKGROUND SHOWN TO STUDENT:
 ---
 {background_information}
@@ -73,6 +79,12 @@ TARGET EDUCATION LEVEL:
 ---
 Level: {education_level_label}
 Guidance: {education_level_guidance}
+---
+
+GRADING STRICTNESS (apply only to the "grading" object below; keep the next question at a neutral difficulty for the professor domain and education level — do not make the next question harder or easier based on this mode):
+---
+Mode: {grading_strictness_label}
+{grading_strictness_guidance}
 ---
 
 PROFESSOR DOMAIN / CONSTRAINTS (for generating the next question):
@@ -122,6 +134,12 @@ Level: {education_level_label}
 Guidance: {education_level_guidance}
 ---
 
+GRADING STRICTNESS (apply when scoring the LAST answer and when combining into "final_grade"; be consistent with this mode):
+---
+Mode: {grading_strictness_label}
+{grading_strictness_guidance}
+---
+
 QUESTIONS ALREADY COMPLETED AND GRADED (use for the final summary):
 ---
 {earlier_questions_graded_blob}
@@ -161,6 +179,12 @@ TARGET EDUCATION LEVEL (keep the same level-appropriate expectations used for ea
 ---
 Level: {education_level_label}
 Guidance: {education_level_guidance}
+---
+
+GRADING STRICTNESS (each question was already scored with this mindset; synthesize the overall grade consistently):
+---
+Mode: {grading_strictness_label}
+{grading_strictness_guidance}
 ---
 
 Each element is one question's grading outcome (JSON-like summaries):

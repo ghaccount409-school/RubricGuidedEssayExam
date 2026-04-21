@@ -48,6 +48,45 @@ def test_exam_start_rejects_invalid_education_level(client: TestClient):
     assert "problem with that request" in r.text.lower()
 
 
+def test_exam_start_rejects_invalid_grading_strictness(client: TestClient):
+    r = client.post(
+        "/exam/start",
+        data={
+            "student_id": "x",
+            "professor_domain": "y",
+            "grading_strictness": "not_a_mode",
+            "num_questions": "1",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 400
+    assert "text/html" in r.headers.get("content-type", "")
+    assert "problem with that request" in r.text.lower()
+
+
+def test_insane_grading_strictness_mock_final_percent(client: TestClient):
+    r0 = client.post(
+        "/exam/start",
+        data={
+            "student_id": "insane-tester",
+            "professor_domain": "Domain for insane strictness.",
+            "grading_strictness": "insane",
+            "num_questions": "1",
+        },
+        follow_redirects=False,
+    )
+    assert r0.status_code == 303
+    session_id = int(r0.headers["location"].split("/exam/")[1].split("/")[0])
+    client.post(
+        f"/exam/{session_id}/answer",
+        data={"answer": "Answer text.", "seconds_on_question": ""},
+        follow_redirects=True,
+    )
+    res = client.get(f"/exam/{session_id}/results")
+    assert res.status_code == 200
+    assert "68.0%" in res.text
+
+
 def test_full_exam_single_question_flow(client: TestClient):
     r0 = client.post(
         "/exam/start",

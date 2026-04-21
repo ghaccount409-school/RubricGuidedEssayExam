@@ -9,6 +9,13 @@ from app.config import get_settings
 from app.perf_logging import log_performance_event
 from app.errors import TogetherApiError
 from app.education_levels import guidance_for_level, label_for_level
+from app.grading_strictness import (
+    DEFAULT_GRADING_STRICTNESS,
+    guidance_for_strictness,
+    label_for_strictness,
+    mock_percent_for_strictness,
+    normalize_strictness,
+)
 from app.prompts import (
     COMBINED_GRADE_AND_FINAL_TEMPLATE,
     COMBINED_GRADE_AND_NEXT_QUESTION_TEMPLATE,
@@ -57,19 +64,32 @@ def _mock_question_payload(professor_domain: str, q_index: int, education_level:
     }
 
 
-def _mock_grade_payload() -> dict[str, Any]:
+def _mock_grade_payload(grading_strictness: str = DEFAULT_GRADING_STRICTNESS) -> dict[str, Any]:
+    m = normalize_strictness(grading_strictness)
+    pct = mock_percent_for_strictness(m)
+    label = label_for_strictness(m)
     return {
-        "highly_satisfactory": True,
-        "dimension_scores": {"rubric_alignment": 85, "completeness": 80, "clarity": 88},
-        "overall_percent": 84.0,
-        "explanation": "[MOCK] Answer addresses rubric at a reasonable level; mock grader always passes.",
+        "highly_satisfactory": pct >= 80,
+        "dimension_scores": {
+            "rubric_alignment": round(max(0, min(100, pct - 2))),
+            "completeness": round(max(0, min(100, pct - 4))),
+            "clarity": round(max(0, min(100, pct + 1))),
+        },
+        "overall_percent": pct,
+        "explanation": (
+            f"[MOCK] Demo score for grading mode “{label}”. "
+            "In Production, the model applies this strictness to rubric-based scoring."
+        ),
     }
 
 
-def _mock_final_payload() -> dict[str, Any]:
+def _mock_final_payload(grading_strictness: str = DEFAULT_GRADING_STRICTNESS) -> dict[str, Any]:
+    m = normalize_strictness(grading_strictness)
+    pct = mock_percent_for_strictness(m)
+    label = label_for_strictness(m)
     return {
-        "total_grade_percent": 84.0,
-        "explanation": "[MOCK] Average of mock per-question scores.",
+        "total_grade_percent": pct,
+        "explanation": f"[MOCK] Demo overall grade for “{label}” strictness (equal weight per question in mock).",
         "weighting_notes": "Equal weight per question in mock.",
     }
 
@@ -219,13 +239,14 @@ def grade_and_next_question_combined(
     seconds_on_question: int | None,
     education_level: str = "college",
     *,
+    grading_strictness: str = DEFAULT_GRADING_STRICTNESS,
     use_mock: bool = True,
     exam_session_id: int | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Single API call: grade current answer + generate next question (saves one round trip)."""
     if use_mock:
         return (
-            _mock_grade_payload(),
+            _mock_grade_payload(grading_strictness),
             _mock_question_payload(professor_domain, next_question_index, education_level),
         )
 
@@ -240,6 +261,8 @@ def grade_and_next_question_combined(
     prompt = COMBINED_GRADE_AND_NEXT_QUESTION_TEMPLATE.format(
         education_level_label=label_for_level(education_level),
         education_level_guidance=guidance_for_level(education_level),
+        grading_strictness_label=label_for_strictness(grading_strictness),
+        grading_strictness_guidance=guidance_for_strictness(grading_strictness),
         professor_domain=professor_domain,
         prior_questions_summary=prior_questions_summary or "(none yet)",
         background_information=background_information,
@@ -281,12 +304,13 @@ def grade_and_final_combined(
     seconds_on_question: int | None,
     education_level: str = "college",
     *,
+    grading_strictness: str = DEFAULT_GRADING_STRICTNESS,
     use_mock: bool = True,
     exam_session_id: int | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Single API call: grade last answer + overall final grade (saves one round trip)."""
     if use_mock:
-        return _mock_grade_payload(), _mock_final_payload()
+        return _mock_grade_payload(grading_strictness), _mock_final_payload(grading_strictness)
 
     rubric_display = grading_rubric
     try:
@@ -299,6 +323,8 @@ def grade_and_final_combined(
     prompt = COMBINED_GRADE_AND_FINAL_TEMPLATE.format(
         education_level_label=label_for_level(education_level),
         education_level_guidance=guidance_for_level(education_level),
+        grading_strictness_label=label_for_strictness(grading_strictness),
+        grading_strictness_guidance=guidance_for_strictness(grading_strictness),
         earlier_questions_graded_blob=earlier_questions_graded_blob or "(no prior questions — single-question exam)",
         background_information=background_information,
         essay_question=essay_question,
@@ -337,11 +363,12 @@ def grade_answer(
     seconds_on_question: int | None,
     education_level: str = "college",
     *,
+    grading_strictness: str = DEFAULT_GRADING_STRICTNESS,
     use_mock: bool = True,
     exam_session_id: int | None = None,
 ) -> dict[str, Any]:
     if use_mock:
-        return _mock_grade_payload()
+        return _mock_grade_payload(grading_strictness)
 
     rubric_display = grading_rubric
     try:
@@ -354,6 +381,8 @@ def grade_answer(
     prompt = GRADE_RESPONSE_TEMPLATE.format(
         education_level_label=label_for_level(education_level),
         education_level_guidance=guidance_for_level(education_level),
+        grading_strictness_label=label_for_strictness(grading_strictness),
+        grading_strictness_guidance=guidance_for_strictness(grading_strictness),
         background_information=background_information,
         essay_question=essay_question,
         grading_rubric=rubric_display,
@@ -375,16 +404,19 @@ def final_grade(
     per_question_summaries: list[dict[str, Any]],
     education_level: str = "college",
     *,
+    grading_strictness: str = DEFAULT_GRADING_STRICTNESS,
     use_mock: bool = True,
     exam_session_id: int | None = None,
 ) -> dict[str, Any]:
     if use_mock:
-        return _mock_final_payload()
+        return _mock_final_payload(grading_strictness)
 
     blob = json.dumps(per_question_summaries, ensure_ascii=False, indent=2)
     prompt = FINAL_GRADE_TEMPLATE.format(
         education_level_label=label_for_level(education_level),
         education_level_guidance=guidance_for_level(education_level),
+        grading_strictness_label=label_for_strictness(grading_strictness),
+        grading_strictness_guidance=guidance_for_strictness(grading_strictness),
         per_question_summaries=blob,
     )
     content = _chat_completion(

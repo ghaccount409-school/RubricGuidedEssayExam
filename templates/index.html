@@ -51,6 +51,22 @@
       <span class="hint">Between 1 and 20 per session.</span>
     </div>
 
+    <div class="field field-span-2 grading-strictness-field">
+      <span class="field-label-row">Grading strictness</span>
+      <input type="hidden" name="grading_strictness" id="grading_strictness" value="{{ default_grading_strictness }}">
+      <div class="mode-toggle-wrap" role="group" aria-label="Grading strictness">
+        {% for opt in grading_strictness_options %}
+        <button type="button"
+          class="mode-pill mode-pill-compact {% if opt.id == default_grading_strictness %}is-active{% endif %}"
+          id="btn-strict-{{ opt.id }}"
+          data-strictness="{{ opt.id }}"
+          data-hint="{{ opt.hint }}"
+          aria-pressed="{% if opt.id == default_grading_strictness %}true{% else %}false{% endif %}">{{ opt.label }}</button>
+        {% endfor %}
+      </div>
+      <span class="hint" id="strictness-hint">{% for opt in grading_strictness_options %}{% if opt.id == default_grading_strictness %}{{ opt.hint }}{% endif %}{% endfor %}</span>
+    </div>
+
     <div class="field field-span-2 llm-mode-field">
       <span class="field-label-row">LLM mode</span>
       <input type="hidden" name="llm_mode" id="llm_mode" value="{% if default_toggle_mock %}mock{% else %}live{% endif %}">
@@ -101,6 +117,30 @@
   btnLive.addEventListener('click', function () {
     if (btnLive.disabled) return;
     setMode('live');
+  });
+})();
+
+(function () {
+  var hidden = document.getElementById('grading_strictness');
+  var hintEl = document.getElementById('strictness-hint');
+  var buttons = document.querySelectorAll('[data-strictness]');
+  if (!hidden || !buttons.length) return;
+  function setStrictness(id) {
+    hidden.value = id;
+    buttons.forEach(function (btn) {
+      var on = btn.getAttribute('data-strictness') === id;
+      btn.classList.toggle('is-active', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    var active = document.querySelector('[data-strictness="' + id + '"]');
+    if (hintEl && active && active.getAttribute('data-hint')) {
+      hintEl.textContent = active.getAttribute('data-hint');
+    }
+  }
+  buttons.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      setStrictness(btn.getAttribute('data-strictness'));
+    });
   });
 })();
 

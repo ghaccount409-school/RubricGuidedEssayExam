@@ -6,6 +6,7 @@
     <span class="pill pill-student">{{ session.student_id }}</span>
     <span class="pill pill-level">{{ education_label }}</span>
     <span class="pill pill-llm">{{ llm_mode_label }}</span>
+    <span class="pill pill-strictness" title="How harshly answers are scored for this session">{{ grading_label }}</span>
     <span class="muted">Question {{ question_number }} of {{ total_planned }}</span>
   </div>
   <div class="progress-track" role="progressbar" aria-valuenow="{{ question_number }}" aria-valuemin="1" aria-valuemax="{{ total_planned }}"

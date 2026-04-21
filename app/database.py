@@ -18,6 +18,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship,
 
 from app.config import get_settings
 from app.education_levels import DEFAULT_EDUCATION_LEVEL_ID
+from app.grading_strictness import DEFAULT_GRADING_STRICTNESS
 
 
 class Base(DeclarativeBase):
@@ -37,6 +38,8 @@ class ExamSession(Base):
     status: Mapped[str] = mapped_column(String(64), default="in_progress")  # in_progress | completed
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     final_grade_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # easy | balanced | strict | insane — controls LLM grading prompt (see app.grading_strictness).
+    grading_strictness: Mapped[str] = mapped_column(String(32), default=DEFAULT_GRADING_STRICTNESS)
 
     questions: Mapped[list["ExamQuestion"]] = relationship(back_populates="session", cascade="all, delete-orphan")
     final_grade_row: Mapped["FinalGrade | None"] = relationship(back_populates="session", uselist=False)
@@ -134,6 +137,18 @@ def _migrate_sqlite_schema() -> None:
         try:
             conn.execute(
                 text("ALTER TABLE exam_sessions ADD COLUMN use_mock_llm INTEGER NOT NULL DEFAULT 1")
+            )
+        except Exception as e:
+            msg = str(e).lower()
+            if "duplicate column" not in msg and "already exists" not in msg:
+                raise
+        try:
+            conn.execute(
+                text(
+                    "ALTER TABLE exam_sessions ADD COLUMN grading_strictness VARCHAR(32) NOT NULL DEFAULT '"
+                    + DEFAULT_GRADING_STRICTNESS
+                    + "'"
+                )
             )
         except Exception as e:
             msg = str(e).lower()

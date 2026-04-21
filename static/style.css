@@ -495,6 +495,21 @@ button.btn-primary {
   border: 1px solid rgba(52, 211, 153, 0.35);
 }
 
+.pill-strictness {
+  background: rgba(251, 191, 36, 0.12);
+  color: #fcd34d;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+}
+
+.grading-strictness-field {
+  padding-top: 0.25rem;
+}
+
+.mode-pill.mode-pill-compact {
+  font-size: 0.8rem;
+  padding: 0.38rem 0.75rem;
+}
+
 .field-label-row {
   display: block;
   font-size: 0.85rem;

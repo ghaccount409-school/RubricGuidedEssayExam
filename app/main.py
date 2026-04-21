@@ -22,12 +22,19 @@ from app.education_levels import (
     EDUCATION_LEVELS,
     label_for_level,
 )
+from app.grading_strictness import (
+    ALLOWED_STRICTNESS_IDS,
+    DEFAULT_GRADING_STRICTNESS,
+    GRADING_STRICTNESS_OPTIONS,
+    label_for_strictness,
+)
 from app.llm_service import generate_question, grade_and_final_combined, grade_and_next_question_combined
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 templates.env.filters["fromjson"] = lambda s: json.loads(s)
 templates.env.filters["level_label"] = label_for_level
+templates.env.filters["strictness_label"] = label_for_strictness
 
 _EXAM_ID_IN_PATH = re.compile(r"^/(?:exam|professor/exam)/(\d+)(?:/|$)")
 
@@ -413,6 +420,8 @@ def home(request: Request):
             "default_level": DEFAULT_EDUCATION_LEVEL_ID,
             "api_key_configured": has_key,
             "default_toggle_mock": default_toggle_mock,
+            "grading_strictness_options": GRADING_STRICTNESS_OPTIONS,
+            "default_grading_strictness": DEFAULT_GRADING_STRICTNESS,
         },
     )
 
@@ -424,6 +433,7 @@ def exam_start(
     professor_domain: str = Form(...),
     education_level: str = Form(DEFAULT_EDUCATION_LEVEL_ID),
     llm_mode: str = Form("mock"),
+    grading_strictness: str = Form(DEFAULT_GRADING_STRICTNESS),
     num_questions: int = Form(1),
     db: Session = Depends(get_db),
 ):
@@ -442,6 +452,10 @@ def exam_start(
         )
     n = max(1, min(20, int(num_questions)))
 
+    gs = grading_strictness.strip().lower()
+    if gs not in ALLOWED_STRICTNESS_IDS:
+        raise HTTPException(400, "Invalid grading strictness")
+
     session = ExamSession(
         student_id=student_id,
         professor_domain=professor_domain.strip(),
@@ -450,6 +464,7 @@ def exam_start(
         num_questions_planned=n,
         current_question_index=0,
         status="in_progress",
+        grading_strictness=gs,
     )
     db.add(session)
     try:
@@ -517,6 +532,7 @@ def exam_question(request: Request, session_id: int, db: Session = Depends(get_d
             "rubric_display": rubric_display,
             "education_label": label_for_level(session.education_level),
             "llm_mode_label": "Mock" if session.use_mock_llm else "Production",
+            "grading_label": label_for_strictness(session.grading_strictness),
         },
     )
 
@@ -594,6 +610,7 @@ def exam_answer(
                 student_response=q.student_response,
                 seconds_on_question=sec,
                 education_level=session.education_level,
+                grading_strictness=session.grading_strictness,
                 use_mock=session.use_mock_llm,
                 exam_session_id=session.id,
             )
@@ -653,6 +670,7 @@ def exam_answer(
             q.student_response,
             sec,
             education_level=session.education_level,
+            grading_strictness=session.grading_strictness,
             use_mock=session.use_mock_llm,
             exam_session_id=session.id,
         )
@@ -750,6 +768,7 @@ def exam_results(request: Request, session_id: int, db: Session = Depends(get_db
             "overall_points_possible": total_points_possible,
             "education_label": label_for_level(session.education_level),
             "llm_mode_label": "Mock" if session.use_mock_llm else "Production",
+            "grading_label": label_for_strictness(session.grading_strictness),
         },
     )
 
@@ -815,5 +834,6 @@ def professor_exam_detail(request: Request, session_id: int, db: Session = Depen
             "overall_final_summary": _overall_final_summary(fg),
             "overall_points_earned": overall_points_earned,
             "overall_points_possible": total_points_possible,
+            "grading_label": label_for_strictness(session.grading_strictness),
         },
     )
