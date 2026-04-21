@@ -31,6 +31,7 @@ from app.grading_strictness import (
     label_for_strictness,
 )
 from app.llm_service import (
+    generate_ai_helper_reply,
     generate_question,
     generate_safe_hint,
     grade_and_final_combined,
@@ -90,6 +91,7 @@ async def log_http_timing(request: Request, call_next):
         )
 
 POINTS_PER_QUESTION = 10.0
+AI_HELPER_OFFTOPIC_MESSAGE = "sorry I cannot help you with that please ask questions regarding exam"
 
 
 @app.exception_handler(TogetherApiError)
@@ -432,6 +434,39 @@ def _save_ai_reply_to_history(q: ExamQuestion, reply_text: str) -> None:
     q.latest_ai_helper_reply = reply_text
 
 
+def _reply_mentions_question(reply: str, question: str) -> bool:
+    r = (reply or "").lower()
+    q_words = [w for w in re.findall(r"[a-z0-9']+", (question or "").lower()) if len(w) >= 4]
+    if not q_words:
+        return True
+    return any(w in r for w in q_words[:8])
+
+
+def _is_clearly_unrelated_exam_ask(question_text: str, context_blob: str) -> bool:
+    q_tokens = {
+        w
+        for w in re.findall(r"[a-z0-9']+", (question_text or "").lower())
+        if len(w) >= 3
+    }
+    if not q_tokens:
+        return False
+    stop_words = {
+        "the", "and", "for", "with", "that", "this", "you", "your", "are", "was",
+        "from", "have", "what", "when", "where", "which", "how", "why", "can",
+        "please", "help", "about", "exam", "question",
+    }
+    q_tokens = {t for t in q_tokens if t not in stop_words}
+    if not q_tokens:
+        return False
+    ctx_tokens = {
+        w
+        for w in re.findall(r"[a-z0-9']+", (context_blob or "").lower())
+        if len(w) >= 3 and w not in stop_words
+    }
+    overlap = q_tokens.intersection(ctx_tokens)
+    return len(overlap) == 0
+
+
 @app.post("/exam/{session_id}/client-timing")
 def exam_client_timing(
     session_id: int,
@@ -475,6 +510,11 @@ def performance_log(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
+    return templates.TemplateResponse(request, "home.html", {})
+
+
+@app.get("/start", response_class=HTMLResponse)
+def start_exam_page(request: Request):
     s = get_settings()
     has_key = bool(str(s.together_api_key or "").strip())
     default_toggle_mock = not has_key or s.mock_llm
@@ -490,6 +530,48 @@ def home(request: Request):
             "default_grading_strictness": DEFAULT_GRADING_STRICTNESS,
         },
     )
+
+
+@app.get("/resume", response_class=HTMLResponse)
+def resume_exam_page(request: Request):
+    return templates.TemplateResponse(
+        request,
+        "resume.html",
+        {"error_message": "", "student_id": ""},
+    )
+
+
+@app.post("/resume", response_class=HTMLResponse)
+def resume_exam_submit(
+    request: Request,
+    student_id: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    sid = (student_id or "").strip()
+    if not sid:
+        return templates.TemplateResponse(
+            request,
+            "resume.html",
+            {"error_message": "Please enter your student ID.", "student_id": ""},
+            status_code=400,
+        )
+    session = (
+        db.query(ExamSession)
+        .filter(ExamSession.student_id == sid, ExamSession.status == "in_progress")
+        .order_by(ExamSession.created_at.desc())
+        .first()
+    )
+    if not session:
+        return templates.TemplateResponse(
+            request,
+            "resume.html",
+            {
+                "error_message": "No in-progress exam found for that student ID.",
+                "student_id": sid,
+            },
+            status_code=404,
+        )
+    return RedirectResponse(url=f"/exam/{session.id}/question", status_code=303)
 
 
 @app.post("/exam/start", response_class=HTMLResponse)
@@ -644,30 +726,42 @@ def exam_hint(
 
     student_text = (answer_draft or "").strip()
     if _looks_prompt_injection(student_text):
-        q.latest_hint = "Irrelevant question asked. Please ask for help related to this exam question."
+        q.latest_hint = AI_HELPER_OFFTOPIC_MESSAGE
         q.hints_used = int(q.hints_used or 0) + 1
         db.add(q)
         db.commit()
         return RedirectResponse(url=f"/exam/{session_id}/question", status_code=303)
 
     try:
-        hint_payload = generate_safe_hint(
-            essay_question=q.essay_question,
-            background_information=q.background_information,
-            grading_rubric=q.grading_rubric,
-            student_text=student_text or q.essay_question,
-            education_level=session.education_level,
-            use_mock=session.use_mock_llm,
-            exam_session_id=session.id,
-        )
+        if mode_key == "chat":
+            hint_payload = generate_ai_helper_reply(
+                essay_question=q.essay_question,
+                background_information=q.background_information,
+                selected_hint=selected_hint_text,
+                student_question=query_text,
+                education_level=session.education_level,
+                use_mock=session.use_mock_llm,
+                exam_session_id=session.id,
+            )
+        else:
+            hint_payload = generate_safe_hint(
+                essay_question=q.essay_question,
+                background_information=q.background_information,
+                grading_rubric=q.grading_rubric,
+                student_text=student_text or q.essay_question,
+                education_level=session.education_level,
+                use_mock=session.use_mock_llm,
+                exam_session_id=session.id,
+            )
     except TogetherApiError:
         db.rollback()
         raise
 
     hint_status = str(hint_payload.get("status", "ok")).strip().lower()
-    hint_text = str(hint_payload.get("hint", "")).strip()
+    reply_key = "reply" if mode_key == "chat" else "hint"
+    hint_text = str(hint_payload.get(reply_key, "")).strip()
     if hint_status == "irrelevant":
-        hint_text = "Irrelevant question asked. Please ask for help related to this exam question."
+        hint_text = AI_HELPER_OFFTOPIC_MESSAGE
     if not hint_text:
         hint_text = "Focus on the key terms in the question, then explain one concept in your own words first."
     q.latest_hint = hint_text[:1000]
@@ -740,11 +834,44 @@ def exam_hint_json(
         )
 
     selected_hint_text = (selected_hint or "").strip()
+    if mode_key == "chat" and query_text:
+        context_blob = " ".join(
+            part
+            for part in (
+                q.essay_question or "",
+                q.background_information or "",
+                q.grading_rubric or "",
+                selected_hint_text or "",
+            )
+            if part
+        )
+        if _is_clearly_unrelated_exam_ask(query_text, context_blob):
+            response_text = AI_HELPER_OFFTOPIC_MESSAGE
+            _save_ai_reply_to_history(q, response_text)
+            db.add(q)
+            db.commit()
+            after = _hint_budget_status(db, session)
+            updated_history = _hint_history_list(q.hint_history_json)
+            updated_ai_history = _hint_history_list(q.ai_helper_history_json)
+            return JSONResponse(
+                {
+                    "ok": True,
+                    "hint": response_text,
+                    "hint_used": int(after["used"]),
+                    "hint_limit": after["limit"],
+                    "hint_remaining": after["remaining"],
+                    "hint_exhausted": bool(after["exhausted"]),
+                    "hint_history": updated_history,
+                    "ai_helper_history": updated_ai_history,
+                    "mode": mode_key,
+                }
+            )
+
     student_text = " ".join(
         part for part in ((answer_draft or "").strip(), selected_hint_text, query_text) if part
     )
     if _looks_prompt_injection(student_text):
-        response_text = "Irrelevant question asked. Please ask for help related to this exam question."
+        response_text = AI_HELPER_OFFTOPIC_MESSAGE
         if mode_key == "chat":
             _save_ai_reply_to_history(q, response_text)
         else:
@@ -786,10 +913,12 @@ def exam_hint_json(
     hint_status = str(hint_payload.get("status", "ok")).strip().lower()
     hint_text = str(hint_payload.get("hint", "")).strip()
     if hint_status == "irrelevant":
-        hint_text = "Irrelevant question asked. Please ask for help related to this exam question."
+        hint_text = AI_HELPER_OFFTOPIC_MESSAGE
     if not hint_text:
         hint_text = "Focus on the key terms in the question, then explain one concept in your own words first."
     safe_text = hint_text[:1000]
+    if mode_key == "chat" and query_text and not _reply_mentions_question(safe_text, query_text):
+        safe_text = f"About your question \"{query_text[:140]}\": {safe_text}"
     if mode_key == "chat":
         _save_ai_reply_to_history(q, safe_text)
     else:

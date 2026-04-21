@@ -9,7 +9,33 @@ def test_home(client: TestClient):
     r = client.get("/")
     assert r.status_code == 200
     assert "text/html" in r.headers.get("content-type", "")
+    assert "Start exam" in r.text
+    assert "Resume exam" in r.text
+
+
+def test_start_page_loads(client: TestClient):
+    r = client.get("/start")
+    assert r.status_code == 200
     assert b"education_level" in r.content or b"Education level" in r.content
+
+
+def test_resume_page_loads(client: TestClient):
+    r = client.get("/resume")
+    assert r.status_code == 200
+    assert "Resume your in-progress exam" in r.text
+
+
+def test_resume_redirects_to_in_progress_exam(client: TestClient):
+    r0 = client.post(
+        "/exam/start",
+        data={"student_id": "resume-me", "professor_domain": "Resume test domain.", "num_questions": "2"},
+        follow_redirects=False,
+    )
+    assert r0.status_code == 303
+    session_id = int(r0.headers["location"].split("/exam/")[1].split("/")[0])
+    r = client.post("/resume", data={"student_id": "resume-me"}, follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/exam/{session_id}/question"
 
 
 def test_static_css(client: TestClient):

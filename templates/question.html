@@ -39,7 +39,7 @@
 
 <section class="panel hint-panel is-collapsed" id="hint-panel">
   <div class="hint-panel-header">
-    <h2 class="panel-title">Hints</h2>
+    <h2 class="panel-title">Hints <span class="ai-helper-tag">AI Helper</span></h2>
     <button type="button" class="btn btn-secondary hint-collapse-btn" id="hint-collapse-btn" aria-expanded="false" aria-controls="hint-panel-body">
       <span id="hint-collapse-icon" class="hint-chevron" aria-hidden="true"></span>
     </button>
@@ -343,8 +343,22 @@
     formData.set('hint_query', includeQuery ? (hintQuery ? (hintQuery.value || '') : '') : '');
     formData.set('selected_hint', (activeHintIndex >= 0 && hintHistory[activeHintIndex]) ? hintHistory[activeHintIndex] : '');
     formData.set('mode', includeQuery ? 'chat' : 'hint');
+    var originalHintBtnText = hintButton.textContent;
+    var originalChatBtnText = hintChatSubmit ? hintChatSubmit.textContent : '';
     hintButton.disabled = true;
-    if (hintChatSubmit) hintChatSubmit.disabled = true;
+    if (!includeQuery) {
+      hintButton.textContent = 'Loading hint...';
+      hintButton.classList.add('is-loading');
+      hintButton.setAttribute('aria-busy', 'true');
+    }
+    if (hintChatSubmit) {
+      hintChatSubmit.disabled = true;
+      if (includeQuery) {
+        hintChatSubmit.textContent = 'Loading reply...';
+        hintChatSubmit.classList.add('is-loading');
+        hintChatSubmit.setAttribute('aria-busy', 'true');
+      }
+    }
     try {
       var resp = await fetch('/exam/{{ session.id }}/hint-json', {
         method: 'POST',
@@ -383,8 +397,21 @@
       if (data.mode === 'chat') setHelperView('ai');
     } catch (e) {
       hintButton.disabled = false;
+      hintButton.textContent = originalHintBtnText || 'New hint';
+      if (includeQuery && hintChatSubmit) {
+        hintChatSubmit.textContent = originalChatBtnText || 'Ask AI Helper';
+      }
     } finally {
-      if (hintChatSubmit) hintChatSubmit.disabled = false;
+      hintButton.classList.remove('is-loading');
+      hintButton.removeAttribute('aria-busy');
+      if (hintChatSubmit) {
+        hintChatSubmit.disabled = false;
+        hintChatSubmit.classList.remove('is-loading');
+        hintChatSubmit.removeAttribute('aria-busy');
+        if (includeQuery) {
+          hintChatSubmit.textContent = originalChatBtnText || 'Ask AI Helper';
+        }
+      }
     }
   }
 

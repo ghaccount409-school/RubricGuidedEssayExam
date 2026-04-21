@@ -17,6 +17,7 @@ from app.grading_strictness import (
     normalize_strictness,
 )
 from app.prompts import (
+    AI_HELPER_TEMPLATE,
     COMBINED_GRADE_AND_FINAL_TEMPLATE,
     COMBINED_GRADE_AND_NEXT_QUESTION_TEMPLATE,
     FINAL_GRADE_TEMPLATE,
@@ -99,6 +100,35 @@ def _mock_hint_payload() -> dict[str, Any]:
     return {
         "status": "ok",
         "hint": "[MOCK Hint] Start by defining the core concept in one sentence, then connect it to one concrete example from the prompt.",
+    }
+
+
+def _mock_ai_helper_payload(student_question: str, selected_hint: str) -> dict[str, Any]:
+    q = (student_question or "").strip()
+    h = (selected_hint or "").strip()
+    if not q:
+        return {
+            "status": "ok",
+            "reply": "[MOCK AI Helper] Ask a specific follow-up and I will guide your next step without giving the final answer.",
+        }
+    q_preview = q[:220]
+    if h:
+        h_preview = h[:220]
+        return {
+            "status": "ok",
+            "reply": (
+                "[MOCK AI Helper] Based on your question: "
+                f"\"{q_preview}\", start from this hint context: \"{h_preview}\". "
+                "Explain one intermediate step in your own words, then check if it still aligns with the prompt."
+            ),
+        }
+    return {
+        "status": "ok",
+        "reply": (
+            "[MOCK AI Helper] You asked: "
+            f"\"{q_preview}\". "
+            "Focus on one concrete intermediate step and justify why that step is valid before continuing."
+        ),
     }
 
 
@@ -478,5 +508,38 @@ def generate_safe_hint(
         max_tokens=500,
         exam_session_id=exam_session_id,
         llm_call_name="generate_safe_hint",
+    )
+    return _parse_json_object(content)
+
+
+def generate_ai_helper_reply(
+    *,
+    essay_question: str,
+    background_information: str,
+    selected_hint: str,
+    student_question: str,
+    education_level: str = "college",
+    use_mock: bool = True,
+    exam_session_id: int | None = None,
+) -> dict[str, Any]:
+    if use_mock:
+        return _mock_ai_helper_payload(student_question, selected_hint)
+
+    prompt = AI_HELPER_TEMPLATE.format(
+        education_level_label=label_for_level(education_level),
+        education_level_guidance=guidance_for_level(education_level),
+        essay_question=essay_question,
+        background_information=background_information,
+        selected_hint=selected_hint or "(none selected)",
+        student_question=student_question or "(empty)",
+    )
+    content = _chat_completion(
+        [
+            {"role": "system", "content": "You are a secure exam AI helper. Output only valid JSON."},
+            {"role": "user", "content": prompt},
+        ],
+        max_tokens=600,
+        exam_session_id=exam_session_id,
+        llm_call_name="generate_ai_helper_reply",
     )
     return _parse_json_object(content)
