@@ -30,6 +30,7 @@ from app.database import (
     FinalGrade,
     PerformanceLog,
     Student,
+    generate_unique_exam_code,
     get_db,
     get_or_create_student,
     init_db,
@@ -663,6 +664,7 @@ def exam_start(
     student_row = get_or_create_student(db, student_id)
     session = ExamSession(
         student_ref_id=student_row.id,
+        exam_code=generate_unique_exam_code(db),
         professor_domain=professor_domain.strip(),
         education_level=level_key,
         use_mock_llm=use_mock,

@@ -1,4 +1,6 @@
 import json
+import secrets
+import string
 from datetime import datetime, timezone
 from typing import Any
 
@@ -58,6 +60,7 @@ class ExamSession(Base):
     status: Mapped[str] = mapped_column(String(64), default="in_progress")  # in_progress | completed
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     final_grade_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    exam_code: Mapped[str] = mapped_column(String(5), unique=True, index=True)
     # easy | balanced | strict | insane — controls LLM grading prompt (see app.grading_strictness).
     grading_strictness: Mapped[str] = mapped_column(String(32), default=DEFAULT_GRADING_STRICTNESS)
 
@@ -142,6 +145,27 @@ def _engine():
 
 engine = _engine()
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+EXAM_CODE_LENGTH = 5
+EXAM_CODE_ALPHABET = string.ascii_uppercase + string.digits
+
+
+def _is_valid_exam_code(code: str) -> bool:
+    return len(code) == EXAM_CODE_LENGTH and all(ch in EXAM_CODE_ALPHABET for ch in code)
+
+
+def generate_unique_exam_code(
+    db: Session, *, reserved: set[str] | None = None, max_attempts: int = 128
+) -> str:
+    reserved_codes = reserved or set()
+    for _ in range(max_attempts):
+        code = "".join(secrets.choice(EXAM_CODE_ALPHABET) for _ in range(EXAM_CODE_LENGTH))
+        if code in reserved_codes:
+            continue
+        exists = db.query(ExamSession.id).filter(ExamSession.exam_code == code).first()
+        if not exists:
+            return code
+    raise RuntimeError("Unable to generate unique exam code")
 
 
 def get_or_create_student(db: Session, external_student_id: str) -> Student:
@@ -364,6 +388,118 @@ def _migrate_sqlite_schema() -> None:
                     pass
                 else:
                     raise
+        try:
+            conn.execute(text("ALTER TABLE exam_sessions ADD COLUMN exam_code VARCHAR(5)"))
+        except Exception as e:
+            msg = str(e).lower()
+            if "duplicate column" not in msg and "already exists" not in msg:
+                raise
+    _relax_legacy_student_id_not_null_sqlite()
+
+
+def _relax_legacy_student_id_not_null_sqlite() -> None:
+    """Some legacy SQLite DBs still enforce exam_sessions.student_id NOT NULL."""
+    if not str(engine.url).startswith("sqlite"):
+        return
+    with engine.begin() as conn:
+        cols = conn.execute(text("PRAGMA table_info(exam_sessions)")).fetchall()
+        if not cols:
+            return
+        by_name = {str(c[1]): c for c in cols}
+        student_col = by_name.get("student_id")
+        if not student_col:
+            return
+        # PRAGMA columns: (cid, name, type, notnull, dflt_value, pk)
+        if int(student_col[3] or 0) == 0:
+            return
+
+        conn.execute(text("PRAGMA foreign_keys=OFF"))
+        conn.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS exam_sessions_new ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "student_id VARCHAR(256), "
+                "professor_domain TEXT NOT NULL, "
+                "education_level VARCHAR(64) NOT NULL DEFAULT '"
+                + DEFAULT_EDUCATION_LEVEL_ID
+                + "', "
+                "use_mock_llm BOOLEAN NOT NULL DEFAULT 1, "
+                "num_questions_planned INTEGER NOT NULL DEFAULT 1, "
+                "current_question_index INTEGER NOT NULL DEFAULT 0, "
+                "status VARCHAR(64) NOT NULL DEFAULT 'in_progress', "
+                "created_at DATETIME NOT NULL, "
+                "final_grade_json TEXT, "
+                "grading_strictness VARCHAR(32) NOT NULL DEFAULT '"
+                + DEFAULT_GRADING_STRICTNESS
+                + "', "
+                "student_ref_id INTEGER REFERENCES students(id) ON DELETE RESTRICT, "
+                "exam_code VARCHAR(5)"
+                ")"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO exam_sessions_new ("
+                "id, student_id, professor_domain, education_level, use_mock_llm, "
+                "num_questions_planned, current_question_index, status, created_at, "
+                "final_grade_json, grading_strictness, student_ref_id, exam_code"
+                ") "
+                "SELECT id, student_id, professor_domain, education_level, use_mock_llm, "
+                "num_questions_planned, current_question_index, status, created_at, "
+                "final_grade_json, grading_strictness, student_ref_id, exam_code "
+                "FROM exam_sessions"
+            )
+        )
+        conn.execute(text("DROP TABLE exam_sessions"))
+        conn.execute(text("ALTER TABLE exam_sessions_new RENAME TO exam_sessions"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_exam_sessions_student_ref_id ON exam_sessions(student_ref_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_exam_sessions_exam_code ON exam_sessions(exam_code)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_exam_sessions_student_id ON exam_sessions(student_id)"))
+        conn.execute(text("PRAGMA foreign_keys=ON"))
+
+
+def _backfill_exam_codes_and_enforce_unique_index() -> None:
+    db = SessionLocal()
+    try:
+        sessions = db.query(ExamSession).order_by(ExamSession.id.asc()).all()
+        seen: set[str] = set()
+        changed = False
+        for sess in sessions:
+            code = (sess.exam_code or "").strip().upper()
+            if not _is_valid_exam_code(code) or code in seen:
+                sess.exam_code = generate_unique_exam_code(db, reserved=seen)
+                code = sess.exam_code
+                changed = True
+            seen.add(code)
+        if changed:
+            db.commit()
+        else:
+            db.rollback()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+    dialect = engine.dialect.name
+    with engine.begin() as conn:
+        try:
+            if dialect in ("sqlite", "postgresql"):
+                conn.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS "
+                        "ix_exam_sessions_exam_code_unique ON exam_sessions (exam_code)"
+                    )
+                )
+            else:
+                conn.execute(
+                    text("CREATE UNIQUE INDEX ix_exam_sessions_exam_code_unique ON exam_sessions (exam_code)")
+                )
+        except Exception as e:
+            msg = str(e).lower()
+            if "already exists" in msg or "duplicate" in msg:
+                return
+            raise
 
 
 def init_db() -> None:
@@ -374,6 +510,7 @@ def init_db() -> None:
     Student.__table__.create(bind=engine, checkfirst=True)
     _migrate_sqlite_schema()
     _migrate_students_and_exam_session_fk()
+    _backfill_exam_codes_and_enforce_unique_index()
 
 
 def get_db():

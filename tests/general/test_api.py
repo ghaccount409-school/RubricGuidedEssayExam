@@ -63,6 +63,9 @@ def test_same_student_id_reuses_one_student_row_for_two_exams(client: TestClient
         s2 = db.get(ExamSession, id2)
         assert s1 is not None and s2 is not None
         assert s1.student_ref_id == s2.student_ref_id
+        assert s1.exam_code and len(s1.exam_code) == 5 and s1.exam_code.isalnum()
+        assert s2.exam_code and len(s2.exam_code) == 5 and s2.exam_code.isalnum()
+        assert s1.exam_code != s2.exam_code
     finally:
         db.close()
 

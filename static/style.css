@@ -478,6 +478,29 @@ button.btn-primary {
   border: none;
 }
 
+/* Exam code */
+.exam-code-banner {
+  margin-bottom: 1rem;
+  text-align: center;
+}
+
+.exam-code-label {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.exam-code-value {
+  margin: 0.2rem 0 0;
+  font-size: clamp(2rem, 5vw, 3rem);
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: #bfe9ff;
+}
+
 /* Session bar */
 .session-bar {
   margin-bottom: 1.5rem;

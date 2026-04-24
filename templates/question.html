@@ -1,6 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Question {{ question_number }}{% endblock %}
 {% block body %}
+<section class="exam-code-banner" aria-label="Exam ID">
+  <p class="exam-code-label">Exam ID</p>
+  <p class="exam-code-value">{{ session.exam_code }}</p>
+</section>
+
 <div class="session-bar">
   <div class="session-meta">
     <span class="pill pill-student">{{ session.student.external_student_id }}</span>
