@@ -12,9 +12,11 @@ from sqlalchemy import (
     Text,
     create_engine,
     event,
+    inspect,
     text,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
 from app.config import get_settings
 from app.education_levels import DEFAULT_EDUCATION_LEVEL_ID
@@ -25,11 +27,29 @@ class Base(DeclarativeBase):
     pass
 
 
+class Student(Base):
+    """One row per distinct student identifier; exam sessions link here (many exams per student)."""
+
+    __tablename__ = "students"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    external_student_id: Mapped[str] = mapped_column(String(256), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    sessions: Mapped[list["ExamSession"]] = relationship(back_populates="student")
+
+
 class ExamSession(Base):
     __tablename__ = "exam_sessions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    student_id: Mapped[str] = mapped_column(String(256), index=True)
+    student_ref_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("students.id", ondelete="RESTRICT"),
+        index=True,
+    )
     professor_domain: Mapped[str] = mapped_column(Text)
     education_level: Mapped[str] = mapped_column(String(64), default=DEFAULT_EDUCATION_LEVEL_ID)
     use_mock_llm: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -41,6 +61,7 @@ class ExamSession(Base):
     # easy | balanced | strict | insane — controls LLM grading prompt (see app.grading_strictness).
     grading_strictness: Mapped[str] = mapped_column(String(32), default=DEFAULT_GRADING_STRICTNESS)
 
+    student: Mapped["Student"] = relationship(back_populates="sessions", lazy="joined")
     questions: Mapped[list["ExamQuestion"]] = relationship(back_populates="session", cascade="all, delete-orphan")
     final_grade_row: Mapped["FinalGrade | None"] = relationship(back_populates="session", uselist=False)
 
@@ -121,6 +142,136 @@ def _engine():
 
 engine = _engine()
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+
+def get_or_create_student(db: Session, external_student_id: str) -> Student:
+    ext = external_student_id.strip()
+    if not ext:
+        raise ValueError("external_student_id required")
+    existing = db.query(Student).filter(Student.external_student_id == ext).one_or_none()
+    if existing:
+        return existing
+    s = Student(external_student_id=ext)
+    db.add(s)
+    try:
+        db.flush()
+        return s
+    except IntegrityError:
+        db.rollback()
+        return db.query(Student).filter(Student.external_student_id == ext).one()
+
+
+def _migrate_students_and_exam_session_fk() -> None:
+    """Legacy DBs stored student_id string on exam_sessions; normalize to students + student_ref_id."""
+    insp = inspect(engine)
+    tables = set(insp.get_table_names())
+    if "students" not in tables:
+        Student.__table__.create(bind=engine, checkfirst=True)
+    if "exam_sessions" not in tables:
+        return
+    col_names = {c["name"] for c in insp.get_columns("exam_sessions")}
+    if "student_ref_id" in col_names:
+        if "student_id" in col_names:
+            _backfill_student_ref_ids_from_legacy_string_column()
+            _try_drop_legacy_exam_session_student_string_column()
+        if "students" not in set(inspect(engine).get_table_names()):
+            Student.__table__.create(bind=engine, checkfirst=True)
+        return
+    if "student_id" not in col_names:
+        return
+    dialect = engine.dialect.name
+    with engine.begin() as conn:
+        if dialect == "sqlite":
+            try:
+                conn.execute(
+                    text(
+                        "ALTER TABLE exam_sessions ADD COLUMN student_ref_id INTEGER "
+                        "REFERENCES students(id)"
+                    )
+                )
+            except Exception as e:
+                msg = str(e).lower()
+                if "duplicate column" not in msg and "already exists" not in msg:
+                    raise
+        elif dialect == "postgresql":
+            conn.execute(text("ALTER TABLE exam_sessions ADD COLUMN IF NOT EXISTS student_ref_id INTEGER"))
+        else:
+            try:
+                conn.execute(text("ALTER TABLE exam_sessions ADD COLUMN student_ref_id INTEGER"))
+            except Exception as e:
+                msg = str(e).lower()
+                if "duplicate column" not in msg and "already exists" not in msg:
+                    raise
+    _backfill_student_ref_ids_from_legacy_string_column()
+    if dialect == "postgresql":
+        _ensure_postgresql_student_fk_constraint()
+    _try_drop_legacy_exam_session_student_string_column()
+
+
+def _ensure_postgresql_student_fk_constraint() -> None:
+    if engine.dialect.name != "postgresql":
+        return
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE exam_sessions ADD CONSTRAINT exam_sessions_student_ref_id_fkey "
+                    "FOREIGN KEY (student_ref_id) REFERENCES students(id)"
+                )
+            )
+    except Exception as e:
+        msg = str(e).lower()
+        if "already exists" in msg or "duplicate" in msg:
+            return
+        raise
+
+
+def _backfill_student_ref_ids_from_legacy_string_column() -> None:
+    db = SessionLocal()
+    try:
+        rows = db.execute(
+            text("SELECT id, student_id FROM exam_sessions WHERE student_ref_id IS NULL")
+        ).fetchall()
+        for rid, ext in rows:
+            if ext is None or str(ext).strip() == "":
+                continue
+            stu = get_or_create_student(db, str(ext).strip())
+            db.execute(
+                text("UPDATE exam_sessions SET student_ref_id = :srid WHERE id = :id"),
+                {"srid": stu.id, "id": rid},
+            )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+def _try_drop_legacy_exam_session_student_string_column() -> None:
+    insp = inspect(engine)
+    cols = insp.get_columns("exam_sessions")
+    col_names = {c["name"] for c in cols}
+    if "student_id" not in col_names:
+        return
+    info = next(c for c in cols if c["name"] == "student_id")
+    tstr = str(info.get("type", "")).upper()
+    if "INT" in tstr:
+        return
+    dialect = engine.dialect.name
+    with engine.begin() as conn:
+        try:
+            if dialect == "postgresql":
+                conn.execute(text("ALTER TABLE exam_sessions DROP COLUMN IF EXISTS student_id"))
+            else:
+                conn.execute(text("ALTER TABLE exam_sessions DROP COLUMN student_id"))
+        except Exception as e:
+            msg = str(e).lower()
+            if "no such column" in msg or "does not exist" in msg:
+                return
+            if dialect == "sqlite" and ("unsupported" in msg or "cannot drop" in msg):
+                return
+            raise
 
 
 def _migrate_sqlite_schema() -> None:
@@ -217,7 +368,12 @@ def _migrate_sqlite_schema() -> None:
 
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
+    # Always ensure `students` exists. Legacy/partial DBs can have `exam_sessions.student_ref_id`
+    # while migration returns early and never created `students`, which causes
+    # "no such table: students" on any join to Student.
+    Student.__table__.create(bind=engine, checkfirst=True)
     _migrate_sqlite_schema()
+    _migrate_students_and_exam_session_fk()
 
 
 def get_db():

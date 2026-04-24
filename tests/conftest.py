@@ -8,6 +8,10 @@ _db_path = _tmp.name.replace("\\", "/")
 os.environ["DATABASE_URL"] = f"sqlite:///{_db_path}"
 os.environ["MOCK_LLM"] = "1"
 
+_cred_dir = tempfile.mkdtemp()
+os.environ["INSTRUCTOR_CREDENTIALS_PATH"] = os.path.join(_cred_dir, "instructor_credentials.json")
+os.environ["INSTRUCTOR_SESSION_SECRET"] = "test-instructor-session-secret-32chars!!"
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -18,6 +22,17 @@ def client():
 
     with TestClient(app) as c:
         yield c
+
+
+@pytest.fixture
+def logged_in_instructor(client: TestClient):
+    r = client.post(
+        "/professor/login",
+        data={"username": "elliott", "password": "12345", "next": "/professor"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303, r.text
+    return client
 
 
 @pytest.fixture(autouse=True)

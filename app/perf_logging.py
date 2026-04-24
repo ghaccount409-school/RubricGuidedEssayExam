@@ -44,8 +44,8 @@ def log_performance_event(
             resolved_student = st if st else None
         if exam_session_id is not None and not resolved_student:
             sess = db.get(ExamSession, exam_session_id)
-            if sess is not None:
-                resolved_student = sess.student_id
+            if sess is not None and sess.student is not None:
+                resolved_student = sess.student.external_student_id
         meta_s: str | None = None
         if meta:
             meta_s = json.dumps(meta, ensure_ascii=False)

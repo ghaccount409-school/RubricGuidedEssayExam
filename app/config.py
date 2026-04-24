@@ -44,6 +44,17 @@ class Settings(BaseSettings):
         return bool(v)
     database_url: str = "sqlite:///./exam_system.db"
 
+    # Instructor login: session cookie signing (use a long random value in production).
+    instructor_session_secret: str = Field(
+        default="rgee-instructor-session-dev-key-min-32-chars!!",
+        alias="INSTRUCTOR_SESSION_SECRET",
+    )
+    # Optional path to JSON with username_sha256 / password_pbkdf2_hex (see app/instructor_auth.py).
+    instructor_credentials_path: str = Field(default="", alias="INSTRUCTOR_CREDENTIALS_PATH")
+    # Override expected derivatives when no credentials file is used.
+    instructor_username_sha256: str = Field(default="", alias="INSTRUCTOR_USERNAME_SHA256")
+    instructor_password_pbkdf2_hex: str = Field(default="", alias="INSTRUCTOR_PASSWORD_PBKDF2_HEX")
+
 
 @lru_cache
 def get_settings() -> Settings:

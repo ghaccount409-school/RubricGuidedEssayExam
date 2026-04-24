@@ -33,5 +33,5 @@ def test_exam_start_rejects_empty_student_id_without_traceback(client: TestClien
     assert "traceback" not in r.text.lower()
 
 
-def test_professor_unknown_exam_is_404(client: TestClient):
-    assert client.get("/professor/exam/99999").status_code == 404
+def test_professor_unknown_exam_is_404(logged_in_instructor: TestClient):
+    assert logged_in_instructor.get("/professor/exam/99999").status_code == 404

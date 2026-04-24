@@ -3,7 +3,7 @@
 {% block body %}
 <div class="session-bar">
   <div class="session-meta">
-    <span class="pill pill-student">{{ session.student_id }}</span>
+    <span class="pill pill-student">{{ session.student.external_student_id }}</span>
     <span class="pill pill-level">{{ education_label }}</span>
     <span class="pill pill-llm">{{ llm_mode_label }}</span>
     <span class="pill pill-strictness" title="How harshly answers are scored for this session">{{ grading_label }}</span>

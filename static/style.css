@@ -78,6 +78,15 @@ body {
   width: 100%;
 }
 
+/* Home: vertically center hero + actions in space between header and footer */
+.wrap.wrap--home .main {
+  display: flex;
+  flex-direction: column;
+  justify-content: safe center;
+  flex: 1;
+  min-height: 0;
+}
+
 .main {
   flex: 1;
 }
@@ -179,6 +188,24 @@ a:hover {
 }
 .hero-lead strong {
   color: var(--text);
+}
+
+.hero-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  margin-bottom: 0.65rem;
+}
+
+.hero-row .hero-title {
+  margin-bottom: 0;
+}
+
+.hero-inline-form {
+  margin: 0;
+  flex-shrink: 0;
 }
 
 /* Steps */
@@ -298,6 +325,7 @@ label {
 
 input[type="text"],
 input[type="number"],
+input[type="password"],
 textarea,
 select {
   width: 100%;
@@ -1117,13 +1145,32 @@ button.btn-primary {
   transform: rotate(-135deg);
 }
 
-.home-get-started {
+.home-centered {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
-  margin-top: 3.25rem;
+  max-width: 38rem;
+  margin-inline: auto;
+}
+
+.home-centered .home-hero {
+  width: 100%;
+}
+
+.home-nav-actions {
+  margin-top: 2.25rem;
+  width: 100%;
 }
 
 .home-actions {
   justify-content: center;
+  gap: 0.55rem;
+  margin-top: 0;
+}
+
+.home-nav-actions .form-actions {
+  margin-top: 0;
 }
 
 .home-hero {

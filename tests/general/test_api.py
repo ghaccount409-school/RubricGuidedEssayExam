@@ -38,6 +38,35 @@ def test_resume_redirects_to_in_progress_exam(client: TestClient):
     assert r.headers["location"] == f"/exam/{session_id}/question"
 
 
+def test_same_student_id_reuses_one_student_row_for_two_exams(client: TestClient):
+    """Distinct exam sessions share one students row (unique external_student_id)."""
+    from app.database import ExamSession, SessionLocal, Student
+
+    r1 = client.post(
+        "/exam/start",
+        data={"student_id": "shared-student", "professor_domain": "Topic A", "num_questions": "1"},
+        follow_redirects=False,
+    )
+    r2 = client.post(
+        "/exam/start",
+        data={"student_id": "shared-student", "professor_domain": "Topic B", "num_questions": "1"},
+        follow_redirects=False,
+    )
+    assert r1.status_code == 303 and r2.status_code == 303
+    id1 = int(r1.headers["location"].split("/exam/")[1].split("/")[0])
+    id2 = int(r2.headers["location"].split("/exam/")[1].split("/")[0])
+    assert id1 != id2
+    db = SessionLocal()
+    try:
+        assert db.query(Student).filter(Student.external_student_id == "shared-student").count() == 1
+        s1 = db.get(ExamSession, id1)
+        s2 = db.get(ExamSession, id2)
+        assert s1 is not None and s2 is not None
+        assert s1.student_ref_id == s2.student_ref_id
+    finally:
+        db.close()
+
+
 def test_static_css(client: TestClient):
     r = client.get("/static/style.css")
     assert r.status_code == 200
@@ -213,7 +242,8 @@ def test_exam_not_found(client: TestClient):
     assert "we could not find that page" in q.text.lower()
 
 
-def test_professor_dashboard_and_detail(client: TestClient):
+def test_professor_dashboard_and_detail(logged_in_instructor: TestClient):
+    client = logged_in_instructor
     r0 = client.post(
         "/exam/start",
         data={"student_id": "prof-test", "professor_domain": "y", "num_questions": "1"},
@@ -241,6 +271,33 @@ def test_professor_dashboard_and_detail(client: TestClient):
     assert "Points" in det.text
 
     assert client.get("/professor/exam/99999").status_code == 404
+
+
+def test_professor_requires_login(client: TestClient):
+    r = client.get("/professor", follow_redirects=False)
+    assert r.status_code == 303
+    assert "/professor/login" in (r.headers.get("location") or "")
+
+    r2 = client.get("/professor/exam/1", follow_redirects=False)
+    assert r2.status_code == 303
+    assert "/professor/login" in (r2.headers.get("location") or "")
+
+
+def test_professor_logout_clears_session(logged_in_instructor: TestClient):
+    r = logged_in_instructor.post("/professor/logout", follow_redirects=False)
+    assert r.status_code == 303
+    assert logged_in_instructor.get("/professor", follow_redirects=False).status_code == 303
+
+
+def test_professor_login_wrong_password_returns_403_with_message(client: TestClient):
+    r = client.post(
+        "/professor/login",
+        data={"username": "elliott", "password": "definitely-wrong", "next": "/professor"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 403
+    assert "Invalid username or password" in r.text
+    assert "We hit a temporary issue" not in r.text
 
 
 def test_performance_log_page(client: TestClient):

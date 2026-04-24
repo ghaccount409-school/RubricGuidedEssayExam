@@ -1,20 +1,39 @@
 import json
+import logging
 import re
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Request
+from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 from starlette.templating import Jinja2Templates
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.database import ExamQuestion, ExamSession, FinalGrade, PerformanceLog, get_db, init_db
+from app.instructor_auth import (
+    SESSION_KEY,
+    credentials_path,
+    ensure_instructor_credentials_file,
+    instructor_session_ok,
+    verify_instructor_login,
+)
+from app.database import (
+    ExamQuestion,
+    ExamSession,
+    FinalGrade,
+    PerformanceLog,
+    Student,
+    get_db,
+    get_or_create_student,
+    init_db,
+)
 from app.perf_logging import log_performance_event
 from app.errors import TogetherApiError
 from app.education_levels import (
@@ -37,6 +56,8 @@ from app.llm_service import (
     grade_and_final_combined,
     grade_and_next_question_combined,
 )
+
+logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -64,7 +85,29 @@ def _exam_session_id_for_http_log(path: str, response: Response | None) -> int |
     return None
 
 
-app = FastAPI(title="Modular Oral-Style Exam System", version="0.1.0")
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    _s = get_settings()
+    ensure_instructor_credentials_file(credentials_path(BASE_DIR, _s))
+    # Starlette: use lifespan OR on_event startup — not both. With lifespan set,
+    # @app.on_event("startup") is skipped, so DB init must run here.
+    init_db()
+    yield
+
+
+app = FastAPI(
+    title="Modular Oral-Style Exam System",
+    version="0.1.0",
+    lifespan=_lifespan,
+)
+_inst_settings = get_settings()
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=_inst_settings.instructor_session_secret,
+    session_cookie="rgee_instructor",
+    same_site="lax",
+    https_only=False,
+)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
@@ -92,6 +135,22 @@ async def log_http_timing(request: Request, call_next):
 
 POINTS_PER_QUESTION = 10.0
 AI_HELPER_OFFTOPIC_MESSAGE = "sorry I cannot help you with that please ask questions regarding exam"
+
+
+def _safe_instructor_next_url(next_url: str) -> str:
+    if not isinstance(next_url, str) or not next_url.startswith("/") or next_url.startswith("//"):
+        return "/professor"
+    return next_url
+
+
+def _instructor_login_redirect(request: Request) -> RedirectResponse | None:
+    if instructor_session_ok(request):
+        return None
+    raw = request.url.path + ("?" + request.url.query if request.url.query else "")
+    return RedirectResponse(
+        url=f"/professor/login?next={quote(raw, safe='')}",
+        status_code=303,
+    )
 
 
 @app.exception_handler(TogetherApiError)
@@ -138,17 +197,13 @@ async def request_validation_exception_handler(
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     """Final safety net to avoid exposing internal errors to users."""
+    logger.exception("Unhandled error for %s %s", request.method, request.url.path)
     return templates.TemplateResponse(
         request,
         "error.html",
         {"message": "Something went wrong on our side. Please try again in a moment."},
         status_code=500,
     )
-
-
-@app.on_event("startup")
-def _startup():
-    init_db()
 
 
 def _rubric_to_stored(rubric: list | str) -> str:
@@ -557,7 +612,8 @@ def resume_exam_submit(
         )
     session = (
         db.query(ExamSession)
-        .filter(ExamSession.student_id == sid, ExamSession.status == "in_progress")
+        .join(Student, ExamSession.student_ref_id == Student.id)
+        .filter(Student.external_student_id == sid, ExamSession.status == "in_progress")
         .order_by(ExamSession.created_at.desc())
         .first()
     )
@@ -604,8 +660,9 @@ def exam_start(
     if gs not in ALLOWED_STRICTNESS_IDS:
         raise HTTPException(400, "Invalid grading strictness")
 
+    student_row = get_or_create_student(db, student_id)
     session = ExamSession(
-        student_id=student_id,
+        student_ref_id=student_row.id,
         professor_domain=professor_domain.strip(),
         education_level=level_key,
         use_mock_llm=use_mock,
@@ -1177,14 +1234,76 @@ def exam_results(request: Request, session_id: int, db: Session = Depends(get_db
     )
 
 
+@app.get("/professor/login", response_class=HTMLResponse)
+def professor_login_get(
+    request: Request, next_url: str = Query(default="/professor", alias="next")
+):
+    if instructor_session_ok(request):
+        return RedirectResponse(url=_safe_instructor_next_url(next_url), status_code=303)
+    return templates.TemplateResponse(
+        request,
+        "professor_login.html",
+        {"next": _safe_instructor_next_url(next_url)},
+    )
+
+
+@app.post("/professor/login", response_class=HTMLResponse)
+def professor_login_post(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    next_url: str = Form(default="/professor", alias="next"),
+):
+    safe_next = _safe_instructor_next_url(next_url)
+    try:
+        settings = get_settings()
+        if verify_instructor_login(username.strip(), password, BASE_DIR, settings):
+            request.session[SESSION_KEY] = True
+            return RedirectResponse(url=safe_next, status_code=303)
+    except Exception:
+        logger.exception("Professor login POST failed")
+        return templates.TemplateResponse(
+            request,
+            "professor_login.html",
+            {
+                "error": "Could not complete sign-in. Try again, or check instructor_credentials.json and server logs.",
+                "next": safe_next,
+            },
+            status_code=403,
+        )
+    # Use 403 (not 401) so browsers and password managers do not treat this as HTTP
+    # "WWW-Authenticate" auth, which can cause odd follow-up requests or error pages.
+    return templates.TemplateResponse(
+        request,
+        "professor_login.html",
+        {
+            "error": "Invalid username or password.",
+            "next": safe_next,
+        },
+        status_code=403,
+    )
+
+
+@app.post("/professor/logout")
+def professor_logout(request: Request):
+    request.session.pop(SESSION_KEY, None)
+    return RedirectResponse(url="/professor/login", status_code=303)
+
+
 @app.get("/professor", response_class=HTMLResponse)
 def professor_dashboard(request: Request, db: Session = Depends(get_db)):
+    redir = _instructor_login_redirect(request)
+    if redir:
+        return redir
     sessions = db.query(ExamSession).order_by(ExamSession.created_at.desc()).limit(200).all()
     return templates.TemplateResponse(request, "professor.html", {"sessions": sessions})
 
 
 @app.get("/professor/exam/{session_id}", response_class=HTMLResponse)
 def professor_exam_detail(request: Request, session_id: int, db: Session = Depends(get_db)):
+    redir = _instructor_login_redirect(request)
+    if redir:
+        return redir
     session = db.get(ExamSession, session_id)
     if not session:
         raise HTTPException(404, "Not found")
