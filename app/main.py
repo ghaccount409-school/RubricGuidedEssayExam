@@ -637,38 +637,49 @@ def resume_exam_page(request: Request):
     return templates.TemplateResponse(
         request,
         "resume.html",
-        {"error_message": "", "student_id": ""},
+        {"error_message": "", "student_id": "", "exam_id": ""},
     )
 
 
 @app.post("/resume", response_class=HTMLResponse)
 def resume_exam_submit(
     request: Request,
-    student_id: str = Form(...),
+    student_id: str = Form(""),
+    exam_id: str = Form(""),
     db: Session = Depends(get_db),
 ):
     sid = (student_id or "").strip()
-    if not sid:
+    eid = (exam_id or "").strip().upper()
+    if not sid or not eid:
+        missing = "student ID and exam ID" if (not sid and not eid) else ("student ID" if not sid else "exam ID")
         return templates.TemplateResponse(
             request,
             "resume.html",
-            {"error_message": "Please enter your student ID.", "student_id": ""},
+            {
+                "error_message": f"Please enter your {missing}.",
+                "student_id": sid,
+                "exam_id": eid,
+            },
             status_code=400,
         )
     session = (
         db.query(ExamSession)
         .join(Student, ExamSession.student_ref_id == Student.id)
-        .filter(Student.external_student_id == sid, ExamSession.status == "in_progress")
-        .order_by(ExamSession.created_at.desc())
-        .first()
+        .filter(
+            Student.external_student_id == sid,
+            ExamSession.exam_code == eid,
+            ExamSession.status == "in_progress",
+        )
+        .one_or_none()
     )
     if not session:
         return templates.TemplateResponse(
             request,
             "resume.html",
             {
-                "error_message": "No in-progress exam found for that student ID.",
+                "error_message": "No in-progress exam found for that student ID and exam ID.",
                 "student_id": sid,
+                "exam_id": eid,
             },
             status_code=404,
         )

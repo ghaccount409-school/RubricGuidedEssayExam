@@ -26,6 +26,8 @@ def test_resume_page_loads(client: TestClient):
 
 
 def test_resume_redirects_to_in_progress_exam(client: TestClient):
+    from app.database import ExamSession, SessionLocal
+
     r0 = client.post(
         "/exam/start",
         data={"student_id": "resume-me", "professor_domain": "Resume test domain.", "num_questions": "2"},
@@ -33,9 +35,30 @@ def test_resume_redirects_to_in_progress_exam(client: TestClient):
     )
     assert r0.status_code == 303
     session_id = int(r0.headers["location"].split("/exam/")[1].split("/")[0])
-    r = client.post("/resume", data={"student_id": "resume-me"}, follow_redirects=False)
+    db = SessionLocal()
+    try:
+        sess = db.get(ExamSession, session_id)
+        assert sess is not None and sess.exam_code
+        exam_id = sess.exam_code
+    finally:
+        db.close()
+    r = client.post(
+        "/resume",
+        data={"student_id": "resume-me", "exam_id": exam_id},
+        follow_redirects=False,
+    )
     assert r.status_code == 303
     assert r.headers["location"] == f"/exam/{session_id}/question"
+
+
+def test_resume_requires_both_student_and_exam_id(client: TestClient):
+    r = client.post("/resume", data={"student_id": "abc", "exam_id": ""}, follow_redirects=False)
+    assert r.status_code == 400
+    assert "Please enter your exam ID." in r.text
+
+    r2 = client.post("/resume", data={"student_id": "", "exam_id": "A1B2C"}, follow_redirects=False)
+    assert r2.status_code == 400
+    assert "Please enter your student ID." in r2.text
 
 
 def test_same_student_id_reuses_one_student_row_for_two_exams(client: TestClient):
