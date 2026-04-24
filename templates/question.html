@@ -82,7 +82,7 @@
         <strong>AI Reply <span id="ai-carousel-position">{{ ai_helper_history|length }}</span> of <span id="ai-carousel-total">{{ ai_helper_history|length }}</span></strong>
       </div>
       <div class="hint-carousel-body">
-        <span id="latest-ai-text">{% if ai_helper_history and ai_helper_history|length > 0 %}{{ ai_helper_history[-1] }}{% else %}Ask AI Helper a question related to this exam item.{% endif %}</span>
+        <span id="latest-ai-text">{% if hint_exhausted %}Sorry you ran out of hints cannot chat with AI helper{% elif ai_helper_history and ai_helper_history|length > 0 %}{{ ai_helper_history[-1] }}{% else %}Ask AI Helper a question related to this exam item.{% endif %}</span>
       </div>
       <div class="hint-dots" id="ai-dots"></div>
       <div class="hint-carousel-controls">
@@ -97,7 +97,7 @@
           <span class="hint" id="hint-query-help">0 / 100 words</span>
         </div>
         <div class="form-actions hint-chat-actions">
-          <button type="submit" class="btn btn-primary" id="hint-chat-submit">Ask AI Helper</button>
+          <button type="submit" class="btn btn-primary" id="hint-chat-submit"{% if hint_exhausted %} disabled{% endif %}>{% if hint_exhausted %}AI Helper unavailable{% else %}Ask AI Helper{% endif %}</button>
         </div>
       </form>
     </div>
@@ -336,6 +336,7 @@
   }
 
   async function requestHint(includeQuery) {
+    var keepChatDisabled = false;
     hidden.value = answer.value || '';
     if (!updateHintWordCount()) return;
     var formData = new URLSearchParams();
@@ -390,6 +391,15 @@
       if (data.hint_exhausted) {
         hintButton.textContent = 'No hints remaining';
         hintButton.disabled = true;
+        if (hintChatSubmit) {
+          hintChatSubmit.disabled = true;
+          keepChatDisabled = true;
+          hintChatSubmit.textContent = 'AI Helper unavailable';
+        }
+        if (latestAiText && data.hint) {
+          latestAiText.textContent = data.hint;
+          setHelperView('ai');
+        }
       } else {
         hintButton.textContent = 'New hint';
         hintButton.disabled = false;
@@ -405,10 +415,10 @@
       hintButton.classList.remove('is-loading');
       hintButton.removeAttribute('aria-busy');
       if (hintChatSubmit) {
-        hintChatSubmit.disabled = false;
+        hintChatSubmit.disabled = keepChatDisabled ? true : false;
         hintChatSubmit.classList.remove('is-loading');
         hintChatSubmit.removeAttribute('aria-busy');
-        if (includeQuery) {
+        if (includeQuery && !keepChatDisabled) {
           hintChatSubmit.textContent = originalChatBtnText || 'Ask AI Helper';
         }
       }

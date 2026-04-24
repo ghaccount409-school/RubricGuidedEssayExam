@@ -145,6 +145,91 @@ def test_insane_grading_strictness_mock_final_percent(client: TestClient):
     assert "68.0%" in res.text
 
 
+def test_ai_helper_chat_blocked_when_hints_exhausted(client: TestClient):
+    r0 = client.post(
+        "/exam/start",
+        data={
+            "student_id": "no-chat-hints",
+            "professor_domain": "Middle school science basics.",
+            "num_questions": "1",
+            "grading_strictness": "insane",
+        },
+        follow_redirects=False,
+    )
+    assert r0.status_code == 303
+    session_id = int(r0.headers["location"].split("/exam/")[1].split("/")[0])
+    r = client.post(
+        f"/exam/{session_id}/hint-json",
+        data={"mode": "chat", "hint_query": "tell me how to approach this question"},
+    )
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload.get("hint_exhausted") is True
+    assert payload.get("hint") == "Sorry you ran out of hints cannot chat with AI helper"
+
+
+def test_ai_helper_chat_consumes_hint_budget(client: TestClient):
+    r0 = client.post(
+        "/exam/start",
+        data={
+            "student_id": "chat-budget-user",
+            "professor_domain": "Basic geometry with triangles.",
+            "num_questions": "1",
+            "grading_strictness": "strict",
+        },
+        follow_redirects=False,
+    )
+    assert r0.status_code == 303
+    session_id = int(r0.headers["location"].split("/exam/")[1].split("/")[0])
+
+    r1 = client.post(
+        f"/exam/{session_id}/hint-json",
+        data={"mode": "chat", "hint_query": "tell me how to approach this question"},
+    )
+    assert r1.status_code == 200
+    p1 = r1.json()
+    assert p1.get("hint_used") == 1
+    assert p1.get("hint_exhausted") is True
+
+    r2 = client.post(
+        f"/exam/{session_id}/hint-json",
+        data={"mode": "chat", "hint_query": "one more question"},
+    )
+    assert r2.status_code == 200
+    p2 = r2.json()
+    assert p2.get("hint_exhausted") is True
+    assert p2.get("hint") == "Sorry you ran out of hints cannot chat with AI helper"
+
+
+def test_ai_helper_offtopic_message_does_not_consume_hints(client: TestClient):
+    r0 = client.post(
+        "/exam/start",
+        data={
+            "student_id": "chat-offtopic-free",
+            "professor_domain": "Basic geometry with triangles.",
+            "num_questions": "1",
+            "grading_strictness": "balanced",
+        },
+        follow_redirects=False,
+    )
+    assert r0.status_code == 303
+    session_id = int(r0.headers["location"].split("/exam/")[1].split("/")[0])
+
+    r = client.post(
+        f"/exam/{session_id}/hint-json",
+        data={"mode": "chat", "hint_query": "what is the weather in tokyo this weekend"},
+    )
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload.get("hint") == (
+        "I want to help with your exam progress. Please share what part of this question "
+        "you want to work on, and I will guide you without giving the final answer."
+    )
+    assert payload.get("hint_used") == 0
+    assert payload.get("hint_remaining") == 3
+    assert payload.get("hint_exhausted") is False
+
+
 def test_full_exam_single_question_flow(client: TestClient):
     r0 = client.post(
         "/exam/start",

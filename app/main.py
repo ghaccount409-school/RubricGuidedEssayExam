@@ -135,7 +135,11 @@ async def log_http_timing(request: Request, call_next):
         )
 
 POINTS_PER_QUESTION = 10.0
-AI_HELPER_OFFTOPIC_MESSAGE = "sorry I cannot help you with that please ask questions regarding exam"
+AI_HELPER_OFFTOPIC_MESSAGE = (
+    "I want to help with your exam progress. Please share what part of this question "
+    "you want to work on, and I will guide you without giving the final answer."
+)
+AI_HELPER_NO_HINTS_MESSAGE = "Sorry you ran out of hints cannot chat with AI helper"
 
 
 def _safe_instructor_next_url(next_url: str) -> str:
@@ -499,9 +503,31 @@ def _reply_mentions_question(reply: str, question: str) -> bool:
 
 
 def _is_clearly_unrelated_exam_ask(question_text: str, context_blob: str) -> bool:
+    qt = (question_text or "").strip().lower()
+    if not qt:
+        return False
+    # General coaching asks should stay in-flow even without lexical overlap with
+    # prompt context (e.g. "tell me how to approach this question").
+    guidance_phrases = (
+        "how to approach",
+        "how should i approach",
+        "approach this question",
+        "where should i start",
+        "how do i start",
+        "what should i focus on",
+        "how can i improve",
+        "can you guide me",
+        "help me understand",
+        "explain this question",
+        "break this down",
+        "next step",
+    )
+    if any(p in qt for p in guidance_phrases):
+        return False
+
     q_tokens = {
         w
-        for w in re.findall(r"[a-z0-9']+", (question_text or "").lower())
+        for w in re.findall(r"[a-z0-9']+", qt)
         if len(w) >= 3
     }
     if not q_tokens:
@@ -520,7 +546,25 @@ def _is_clearly_unrelated_exam_ask(question_text: str, context_blob: str) -> boo
         if len(w) >= 3 and w not in stop_words
     }
     overlap = q_tokens.intersection(ctx_tokens)
-    return len(overlap) == 0
+    if overlap:
+        return False
+    # If the student explicitly references exam/question intent, prefer a guided
+    # response over outright rejection.
+    exam_intent_tokens = {
+        "question",
+        "prompt",
+        "answer",
+        "respond",
+        "response",
+        "rubric",
+        "explain",
+        "approach",
+        "understand",
+        "focus",
+        "start",
+        "write",
+    }
+    return len(q_tokens.intersection(exam_intent_tokens)) == 0
 
 
 @app.post("/exam/{session_id}/client-timing")
@@ -873,6 +917,21 @@ def exam_hint_json(
             },
             status_code=200,
         )
+    if mode_key == "chat" and hint_state["exhausted"]:
+        return JSONResponse(
+            {
+                "ok": False,
+                "hint": AI_HELPER_NO_HINTS_MESSAGE,
+                "hint_used": int(hint_state["used"]),
+                "hint_limit": hint_state["limit"],
+                "hint_remaining": hint_state["remaining"],
+                "hint_exhausted": True,
+                "hint_history": existing_history,
+                "ai_helper_history": existing_ai_history,
+                "mode": mode_key,
+            },
+            status_code=200,
+        )
 
     query_text = (hint_query or "").strip()
     query_words = query_text.split()
@@ -980,6 +1039,10 @@ def exam_hint_json(
         safe_text = f"About your question \"{query_text[:140]}\": {safe_text}"
     if mode_key == "chat":
         _save_ai_reply_to_history(q, safe_text)
+        # Do not charge hint budget when the helper can only return the
+        # generic redirect/off-topic fallback.
+        if safe_text != AI_HELPER_OFFTOPIC_MESSAGE:
+            q.hints_used = int(q.hints_used or 0) + 1
     else:
         _save_hint_to_history(q, safe_text)
         q.hints_used = int(q.hints_used or 0) + 1
