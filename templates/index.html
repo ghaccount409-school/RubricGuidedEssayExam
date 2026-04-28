@@ -94,7 +94,13 @@
   The server <code>.env</code> can set a default via <code>MOCK_LLM</code>; this page lets you pick <strong>Mock</strong> or <strong>Production</strong> for each exam session.
 </section>
 <div id="generate-loading-overlay" class="loading-overlay" aria-hidden="true">
-  <div class="loading-card" role="status" aria-live="polite" aria-atomic="true">
+  <div class="loading-card exam-loading-card" role="status" aria-live="polite" aria-atomic="true">
+    <img
+      src="/assets/loading_question.gif"
+      alt="Loading animation"
+      class="loading-screen-gif"
+      aria-hidden="true"
+    >
     <p class="loading-title">Generating your exam</p>
     <p class="loading-message" id="loading-message">Running up resources...</p>
   </div>

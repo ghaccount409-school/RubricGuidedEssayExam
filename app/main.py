@@ -110,11 +110,12 @@ app.add_middleware(
     https_only=False,
 )
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+app.mount("/assets", StaticFiles(directory=str(BASE_DIR / "assets")), name="assets")
 
 
 @app.middleware("http")
 async def log_http_timing(request: Request, call_next):
-    if request.url.path.startswith("/static"):
+    if request.url.path.startswith("/static") or request.url.path.startswith("/assets"):
         return await call_next(request)
     start = time.perf_counter()
     status: int | str = "error"

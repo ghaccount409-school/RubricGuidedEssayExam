@@ -17,6 +17,7 @@
       <thead>
         <tr>
           <th scope="col">ID</th>
+          <th scope="col">Exam ID</th>
           <th scope="col">Student</th>
           <th scope="col">Level</th>
           <th scope="col">Strictness</th>
@@ -30,6 +31,7 @@
         {% for s in sessions %}
         <tr>
           <td>{{ s.id }}</td>
+          <td class="mono-tight">{{ s.exam_code or "—" }}</td>
           <td>{{ s.student.external_student_id }}</td>
           <td><span class="pill pill-level pill-sm">{{ s.education_level | level_label }}</span></td>
           <td><span class="pill pill-strictness pill-sm">{{ s.grading_strictness | strictness_label }}</span></td>
@@ -39,7 +41,7 @@
           <td><a href="/professor/exam/{{ s.id }}" class="link-arrow">Review →</a></td>
         </tr>
       {% else %}
-      <tr><td colspan="8" class="muted center">No sessions yet.</td></tr>
+      <tr><td colspan="9" class="muted center">No sessions yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>

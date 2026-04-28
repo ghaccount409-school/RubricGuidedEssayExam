@@ -105,7 +105,7 @@
   </div>
 </section>
 
-<form class="panel form-card" method="post" action="/exam/{{ session.id }}/answer">
+<form class="panel form-card" method="post" action="/exam/{{ session.id }}/answer" id="answer-form">
   <h2 class="panel-title">Your answer</h2>
   <div class="field">
     <label for="answer">Essay response <span class="req">*</span></label>
@@ -113,12 +113,27 @@
   </div>
   <div class="form-actions">
     {% if question_number < total_planned %}
-      <button type="submit" class="btn btn-primary">Submit &amp; next question</button>
+      <button type="submit" class="btn btn-primary" id="answer-submit-btn">Submit &amp; next question</button>
     {% else %}
-      <button type="submit" class="btn btn-primary">Submit &amp; view results</button>
+      <button type="submit" class="btn btn-primary" id="answer-submit-btn">Submit &amp; view results</button>
     {% endif %}
   </div>
 </form>
+{% if question_number < total_planned %}
+<div id="question-loading-overlay" class="loading-overlay question-loading-overlay" aria-hidden="true">
+  <div class="loading-card question-loading-card" role="status" aria-live="polite" aria-atomic="true">
+    <img
+      src="/assets/loading_question.gif"
+      alt="Loading animation"
+      class="loading-screen-gif"
+      aria-hidden="true"
+    >
+    <p class="loading-title">Generating next question...</p>
+    <p class="loading-meta">Preparing question {{ question_number + 1 }} of {{ total_planned }}</p>
+    <p class="loading-message is-visible" id="question-loading-message">Calibrating to your latest response...</p>
+  </div>
+</div>
+{% endif %}
 {% if question_number == 1 %}
 <script>
 (function () {
@@ -149,6 +164,10 @@
 <script>
 (function () {
   var answer = document.getElementById('answer');
+  var answerForm = document.getElementById('answer-form');
+  var answerSubmitBtn = document.getElementById('answer-submit-btn');
+  var questionLoadingOverlay = document.getElementById('question-loading-overlay');
+  var questionLoadingMessage = document.getElementById('question-loading-message');
   var hidden = document.getElementById('answer_draft_hidden');
   var hintQuery = document.getElementById('hint_query');
   var hintHelp = document.getElementById('hint-query-help');
@@ -178,6 +197,134 @@
   var hintCollapseBtn = document.getElementById('hint-collapse-btn');
   var hintCollapseIcon = document.getElementById('hint-collapse-icon');
   if (!answer || !hidden || !hintForm || !hintButton) return;
+  var defaultAnswerSubmitText = answerSubmitBtn ? answerSubmitBtn.textContent : 'Submit';
+  var questionSubmitLocked = false;
+  var questionLoadingTimers = [];
+  var questionMessageTimer = null;
+  var inFlightAnswerController = null;
+  var leavingViaUserNavigation = false;
+  var questionLoadingMessages = [
+    'Running up resources...',
+    'Putting questions together...',
+    'Aligning rubric criteria...',
+    'Calibrating the exam difficulty...',
+    'Walking the dog...'
+  ];
+
+  function randomizeMessages(items) {
+    var list = items.slice();
+    for (var i = list.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = list[i];
+      list[i] = list[j];
+      list[j] = tmp;
+    }
+    return list;
+  }
+
+  function clearQuestionLoadingTimers() {
+    questionLoadingTimers.forEach(function (timerId) { clearTimeout(timerId); });
+    questionLoadingTimers = [];
+    if (questionMessageTimer) {
+      clearInterval(questionMessageTimer);
+      questionMessageTimer = null;
+    }
+  }
+
+  function startQuestionLoadingMessages() {
+    if (!questionLoadingMessage) return;
+    var randomized = randomizeMessages(questionLoadingMessages);
+    var idx = 0;
+    questionLoadingMessage.textContent = randomized[idx];
+    questionLoadingMessage.classList.add('is-visible');
+    questionMessageTimer = setInterval(function () {
+      idx = (idx + 1) % randomized.length;
+      questionLoadingMessage.classList.remove('is-visible');
+      questionLoadingTimers.push(setTimeout(function () {
+        questionLoadingMessage.textContent = randomized[idx];
+        questionLoadingMessage.classList.add('is-visible');
+      }, 180));
+    }, 1000);
+  }
+
+  function disarmQuestionLoadingState() {
+    questionSubmitLocked = false;
+    clearQuestionLoadingTimers();
+    if (answerForm) {
+      answerForm.classList.remove('form--submitting');
+      answerForm.removeAttribute('aria-busy');
+    }
+    if (answerSubmitBtn) {
+      answerSubmitBtn.disabled = false;
+      answerSubmitBtn.classList.remove('is-loading');
+      answerSubmitBtn.removeAttribute('aria-busy');
+      answerSubmitBtn.textContent = defaultAnswerSubmitText;
+    }
+    if (questionLoadingOverlay) {
+      questionLoadingOverlay.classList.remove('is-active');
+      questionLoadingOverlay.setAttribute('aria-hidden', 'true');
+    }
+  }
+
+  function armQuestionLoadingState() {
+    if (!answerForm || !answerSubmitBtn) return;
+    if (questionSubmitLocked) return;
+    questionSubmitLocked = true;
+    answerForm.classList.add('form--submitting');
+    answerForm.setAttribute('aria-busy', 'true');
+    answerSubmitBtn.disabled = true;
+    answerSubmitBtn.classList.add('is-loading');
+    answerSubmitBtn.setAttribute('aria-busy', 'true');
+    answerSubmitBtn.textContent = 'Submitting...';
+    if (questionLoadingOverlay) {
+      questionLoadingOverlay.classList.add('is-active');
+      questionLoadingOverlay.setAttribute('aria-hidden', 'false');
+      startQuestionLoadingMessages();
+    }
+  }
+
+  function cancelInFlightAnswerSubmission() {
+    if (inFlightAnswerController) {
+      inFlightAnswerController.abort();
+      inFlightAnswerController = null;
+    }
+  }
+
+  function cancelAndNavigate(url) {
+    leavingViaUserNavigation = true;
+    cancelInFlightAnswerSubmission();
+    disarmQuestionLoadingState();
+    window.location.assign(url);
+  }
+
+  async function submitAnswerWithCancellation() {
+    if (!answerForm || !answerSubmitBtn) return;
+    if (questionSubmitLocked) return;
+    armQuestionLoadingState();
+    inFlightAnswerController = new AbortController();
+    try {
+      var response = await fetch(answerForm.action, {
+        method: (answerForm.method || 'POST').toUpperCase(),
+        body: new FormData(answerForm),
+        credentials: 'same-origin',
+        redirect: 'follow',
+        signal: inFlightAnswerController.signal
+      });
+      if (!response.ok) {
+        throw new Error('Answer submit failed with status ' + response.status);
+      }
+      window.location.assign(response.url);
+    } catch (err) {
+      if (err && err.name === 'AbortError') {
+        if (!leavingViaUserNavigation) disarmQuestionLoadingState();
+        return;
+      }
+      disarmQuestionLoadingState();
+    } finally {
+      inFlightAnswerController = null;
+    }
+  }
+
   var hintHistory = {{ hint_history|tojson }};
   var activeHintIndex = hintHistory.length ? hintHistory.length - 1 : -1;
   var aiHistory = {{ ai_helper_history|tojson }};
@@ -434,6 +581,38 @@
     ev.preventDefault();
     requestHint(true);
   });
+
+  if (answerForm && answerSubmitBtn) {
+    answerForm.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      if (questionSubmitLocked) return;
+      submitAnswerWithCancellation();
+    });
+    document.addEventListener('click', function (ev) {
+      if (!questionSubmitLocked) return;
+      var link = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null;
+      if (!link) return;
+      var href = link.getAttribute('href');
+      if (!href || href.charAt(0) === '#') return;
+      ev.preventDefault();
+      cancelAndNavigate(link.href);
+    }, true);
+    window.addEventListener('pagehide', function () {
+      if (!questionSubmitLocked) return;
+      cancelInFlightAnswerSubmission();
+      clearQuestionLoadingTimers();
+    });
+    document.addEventListener('visibilitychange', function () {
+      if (!questionSubmitLocked) return;
+      if (document.visibilityState !== 'hidden') return;
+      cancelInFlightAnswerSubmission();
+      disarmQuestionLoadingState();
+    });
+    window.addEventListener('beforeunload', function () {
+      cancelInFlightAnswerSubmission();
+      clearQuestionLoadingTimers();
+    });
+  }
 })();
 </script>
 {% endblock %}
