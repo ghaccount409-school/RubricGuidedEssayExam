@@ -46,6 +46,46 @@ def _parse_json_object(text: str) -> dict[str, Any]:
         raise
 
 
+def _parse_or_repair_json_object(
+    text: str,
+    *,
+    expected_top_level_keys: list[str] | None = None,
+    exam_session_id: int | None = None,
+    llm_call_name: str = "json_repair",
+) -> dict[str, Any]:
+    """Parse model output as JSON; on failure, ask the model once to repair to valid JSON."""
+    try:
+        return _parse_json_object(text)
+    except json.JSONDecodeError:
+        keys_hint = ", ".join(expected_top_level_keys or [])
+        repair_prompt = (
+            "Rewrite the following content as ONE valid JSON object only. "
+            "Do not wrap in markdown or explanations."
+        )
+        if keys_hint:
+            repair_prompt += f" Preserve these top-level keys: {keys_hint}."
+        repair_prompt += "\n\nContent to repair:\n" + text
+        repaired = _chat_completion(
+            [
+                {
+                    "role": "system",
+                    "content": "You are a JSON repair tool. Output only strict valid JSON.",
+                },
+                {"role": "user", "content": repair_prompt},
+            ],
+            max_tokens=8192,
+            exam_session_id=exam_session_id,
+            llm_call_name=llm_call_name,
+        )
+        try:
+            return _parse_json_object(repaired)
+        except json.JSONDecodeError as e:
+            raise TogetherApiError(
+                "Together.ai returned malformed JSON and repair failed. Please try again.",
+                http_status=503,
+            ) from e
+
+
 def _mock_question_payload(professor_domain: str, q_index: int, education_level: str) -> dict[str, Any]:
     return {
         "background_information": (
@@ -322,7 +362,12 @@ def grade_and_next_question_combined(
         exam_session_id=exam_session_id,
         llm_call_name="grade_and_next_combined",
     )
-    parsed = _parse_json_object(content)
+    parsed = _parse_or_repair_json_object(
+        content,
+        expected_top_level_keys=["grading", "next_question"],
+        exam_session_id=exam_session_id,
+        llm_call_name="grade_and_next_combined_json_repair",
+    )
     g = parsed.get("grading")
     nq = parsed.get("next_question")
     if not isinstance(g, dict) or not isinstance(nq, dict):
@@ -382,7 +427,12 @@ def grade_and_final_combined(
         exam_session_id=exam_session_id,
         llm_call_name="grade_and_final_combined",
     )
-    parsed = _parse_json_object(content)
+    parsed = _parse_or_repair_json_object(
+        content,
+        expected_top_level_keys=["grading", "final_grade"],
+        exam_session_id=exam_session_id,
+        llm_call_name="grade_and_final_combined_json_repair",
+    )
     g = parsed.get("grading")
     fg = parsed.get("final_grade")
     if not isinstance(g, dict) or not isinstance(fg, dict):

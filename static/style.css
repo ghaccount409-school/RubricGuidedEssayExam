@@ -432,7 +432,7 @@ select {
 }
 
 .loading-message {
-  margin: 0.35rem 0 0;
+  margin: 0;
   color: var(--muted);
   font-size: 0.95rem;
   opacity: 0.35;
@@ -555,12 +555,12 @@ button.btn-primary {
   display: block;
   width: min(14.4rem, 62vw);
   height: auto;
-  margin: 0 auto 0.3rem;
+  margin: 0 auto 0;
   border-radius: 12px;
 }
 
 .question-loading-card .loading-meta {
-  margin: 0.2rem 0 0;
+  margin: 0;
   color: #b6d7ea;
   font-size: 0.9rem;
 }

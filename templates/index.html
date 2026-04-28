@@ -42,6 +42,12 @@
       <label for="professor_domain">Topic &amp; constraints for the AI <span class="req">*</span></label>
       <textarea id="professor_domain" name="professor_domain" required rows="5"
         placeholder="Example: High school biology — cell division (mitosis vs meiosis). Students should explain phases in their own words; no need for Latin names beyond mitosis/meiosis."></textarea>
+      <div class="mode-toggle-wrap" aria-label="Quick topic presets">
+        <button type="button" class="mode-pill mode-pill-compact" data-topic-preset="math">Math</button>
+        <button type="button" class="mode-pill mode-pill-compact" data-topic-preset="science">Science</button>
+        <button type="button" class="mode-pill mode-pill-compact" data-topic-preset="history">History</button>
+      </div>
+      <span class="hint">Quick fill presets: adds balanced topic constraints you can edit.</span>
       <span class="hint">Sets the domain and difficulty; the model generates new questions from this guidance.</span>
     </div>
 
@@ -106,6 +112,27 @@
   </div>
 </div>
 <script>
+(function () {
+  var domain = document.getElementById('professor_domain');
+  var presetButtons = document.querySelectorAll('[data-topic-preset]');
+  if (!domain || !presetButtons.length) return;
+  var presets = {
+    math: 'Balanced math questions across algebra, geometry, and word problems. Mix straightforward and multi-step reasoning with age-appropriate rigor.',
+    science: 'Balanced science questions across core concepts, interpretation, and explanation. Include both factual understanding and applied reasoning.',
+    history: 'Balanced history questions across causes, context, and consequences. Include source-aware reasoning and clear chronological framing.'
+  };
+  presetButtons.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var key = btn.getAttribute('data-topic-preset');
+      var value = presets[key];
+      if (!value) return;
+      domain.value = value;
+      domain.focus();
+      domain.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  });
+})();
+
 (function () {
   var hidden = document.getElementById('llm_mode');
   var btnMock = document.getElementById('btn-mock');

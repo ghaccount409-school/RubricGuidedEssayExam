@@ -249,6 +249,7 @@
 
   function disarmQuestionLoadingState() {
     questionSubmitLocked = false;
+    leavingViaUserNavigation = false;
     clearQuestionLoadingTimers();
     if (answerForm) {
       answerForm.classList.remove('form--submitting');
@@ -597,17 +598,6 @@
       ev.preventDefault();
       cancelAndNavigate(link.href);
     }, true);
-    window.addEventListener('pagehide', function () {
-      if (!questionSubmitLocked) return;
-      cancelInFlightAnswerSubmission();
-      clearQuestionLoadingTimers();
-    });
-    document.addEventListener('visibilitychange', function () {
-      if (!questionSubmitLocked) return;
-      if (document.visibilityState !== 'hidden') return;
-      cancelInFlightAnswerSubmission();
-      disarmQuestionLoadingState();
-    });
     window.addEventListener('beforeunload', function () {
       cancelInFlightAnswerSubmission();
       clearQuestionLoadingTimers();
