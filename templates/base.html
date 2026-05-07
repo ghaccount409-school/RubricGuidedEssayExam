@@ -33,5 +33,118 @@
       <p>Modular oral-style exam system · Mock LLM supported for local demos</p>
     </footer>
   </div>
+  <div class="a11y-menu" data-a11y-menu>
+    <button
+      type="button"
+      class="a11y-fab"
+      data-a11y-toggle
+      aria-expanded="false"
+      aria-controls="a11y-panel"
+      aria-label="Open accessibility options"
+      title="Accessibility options"
+    >
+      <span class="a11y-fab-icon" aria-hidden="true">♿</span>
+    </button>
+    <section
+      id="a11y-panel"
+      class="a11y-panel"
+      data-a11y-panel
+      role="dialog"
+      aria-label="Accessibility features"
+      hidden
+    >
+      <h2 class="a11y-panel-title">Accessibility</h2>
+      <p class="a11y-panel-subtitle">Cursor visibility</p>
+      <div class="a11y-cursor-options" role="group" aria-label="Big cursor options">
+        <button type="button" class="a11y-option" data-cursor-choice="black">
+          <span class="a11y-option-preview a11y-option-preview-black" aria-hidden="true"></span>
+          <span class="a11y-option-label">Big Black Cursor</span>
+        </button>
+        <button type="button" class="a11y-option" data-cursor-choice="white">
+          <span class="a11y-option-preview a11y-option-preview-white" aria-hidden="true"></span>
+          <span class="a11y-option-label">Big White Cursor</span>
+        </button>
+      </div>
+    </section>
+  </div>
+  <script>
+    (function () {
+      var storageKey = "rgee_a11y_cursor_choice";
+      var body = document.body;
+      var menuRoot = document.querySelector("[data-a11y-menu]");
+      if (!menuRoot) return;
+
+      var toggle = menuRoot.querySelector("[data-a11y-toggle]");
+      var panel = menuRoot.querySelector("[data-a11y-panel]");
+      var optionButtons = Array.prototype.slice.call(menuRoot.querySelectorAll("[data-cursor-choice]"));
+      if (!toggle || !panel || optionButtons.length === 0) return;
+
+      function applyCursor(choice) {
+        body.classList.remove("a11y-cursor-black", "a11y-cursor-white");
+        if (choice === "black") body.classList.add("a11y-cursor-black");
+        if (choice === "white") body.classList.add("a11y-cursor-white");
+        optionButtons.forEach(function (button) {
+          var selected = button.getAttribute("data-cursor-choice") === choice;
+          button.setAttribute("aria-pressed", selected ? "true" : "false");
+        });
+      }
+
+      function closePanel() {
+        panel.hidden = true;
+        toggle.setAttribute("aria-expanded", "false");
+      }
+
+      function openPanel() {
+        panel.hidden = false;
+        toggle.setAttribute("aria-expanded", "true");
+      }
+
+      function readStoredChoice() {
+        try {
+          return localStorage.getItem(storageKey);
+        } catch (err) {
+          return null;
+        }
+      }
+
+      function storeChoice(choice) {
+        try {
+          localStorage.setItem(storageKey, choice || "");
+        } catch (err) {
+          // Ignore storage failures (private mode, disabled storage, etc).
+        }
+      }
+
+      toggle.addEventListener("click", function () {
+        if (panel.hidden) openPanel();
+        else closePanel();
+      });
+
+      optionButtons.forEach(function (button) {
+        button.addEventListener("click", function () {
+          var selectedChoice = button.getAttribute("data-cursor-choice");
+          var currentlyActive = body.classList.contains("a11y-cursor-" + selectedChoice);
+          if (currentlyActive) {
+            applyCursor("");
+            storeChoice("");
+          } else {
+            applyCursor(selectedChoice);
+            storeChoice(selectedChoice);
+          }
+        });
+      });
+
+      document.addEventListener("click", function (event) {
+        if (panel.hidden) return;
+        if (!menuRoot.contains(event.target)) closePanel();
+      });
+
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") closePanel();
+      });
+
+      applyCursor(readStoredChoice() || "");
+    })();
+  </script>
 </body>
 </html>
