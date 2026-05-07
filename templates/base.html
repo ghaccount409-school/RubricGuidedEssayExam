@@ -211,6 +211,14 @@
         if (event.key === "Escape") closePanel();
       });
 
+      // Prevent native select dropdown flicker when Enter is held down.
+      document.addEventListener("keydown", function (event) {
+        if (event.key !== "Enter" || !event.repeat) return;
+        var target = event.target;
+        if (!target || target.tagName !== "SELECT") return;
+        event.preventDefault();
+      });
+
       setFocusY(window.innerHeight / 2);
       applyCursor(readStoredChoice() || "");
       setFocusEnabled(readStoredFocusEnabled());

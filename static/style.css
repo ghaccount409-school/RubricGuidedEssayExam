@@ -626,10 +626,74 @@ textarea {
   transform: translateY(-50%) rotate(180deg);
 }
 
+.custom-select-wrap.is-open::after {
+  transform: translateY(-50%) rotate(180deg);
+}
+
+.custom-select-native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.custom-select-trigger {
+  width: 100%;
+  padding: 0.7rem 2.25rem 0.7rem 0.85rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.custom-select-trigger:focus {
+  outline: none;
+  border-color: rgba(56, 189, 248, 0.55);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.custom-select-list {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  right: 0;
+  max-height: 15rem;
+  overflow-y: auto;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: #111b2f;
+  box-shadow: var(--shadow);
+  padding: 0.35rem;
+}
+
+.custom-select-option {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0.5rem 0.55rem;
+  background: transparent;
+  color: #eef2f8;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.custom-select-option:hover,
+.custom-select-option[aria-selected="true"] {
+  background: #1e2d45;
+  border-color: rgba(148, 163, 184, 0.35);
+}
+
 select {
   appearance: none;
   padding-right: 2.25rem;
   cursor: pointer;
+  color-scheme: dark;
 }
 
 /* Improve readability for opened native dropdown lists across current/future selects. */

@@ -27,13 +27,24 @@
     </div>
 
     <div class="field">
-      <label for="education_level">Education level <span class="req">*</span></label>
-      <div class="select-wrap">
-        <select id="education_level" name="education_level" required aria-describedby="edu-help">
+      <label for="education_level_trigger">Education level <span class="req">*</span></label>
+      <div class="select-wrap custom-select-wrap" data-custom-select>
+        <select id="education_level" name="education_level" required aria-describedby="edu-help" class="custom-select-native">
           {% for lvl in education_levels %}
           <option value="{{ lvl.id }}"{% if lvl.id == default_level %} selected{% endif %}>{{ lvl.label }}</option>
           {% endfor %}
         </select>
+        <button
+          type="button"
+          id="education_level_trigger"
+          class="custom-select-trigger"
+          aria-haspopup="listbox"
+          aria-expanded="false"
+          aria-controls="education_level_listbox"
+        >
+          <span class="custom-select-trigger-text"></span>
+        </button>
+        <div id="education_level_listbox" class="custom-select-list" role="listbox" hidden></div>
       </div>
       <span id="edu-help" class="hint">Questions and grading expectations match this level (primary through graduate).</span>
     </div>
@@ -112,6 +123,109 @@
   </div>
 </div>
 <script>
+(function () {
+  var wrap = document.querySelector('[data-custom-select]');
+  if (!wrap) return;
+  var nativeSelect = wrap.querySelector('.custom-select-native');
+  var trigger = wrap.querySelector('.custom-select-trigger');
+  var triggerText = wrap.querySelector('.custom-select-trigger-text');
+  var listbox = wrap.querySelector('.custom-select-list');
+  if (!nativeSelect || !trigger || !triggerText || !listbox) return;
+
+  function getOptions() {
+    return Array.prototype.slice.call(nativeSelect.options);
+  }
+
+  function closeList() {
+    listbox.hidden = true;
+    wrap.classList.remove('is-open');
+    trigger.setAttribute('aria-expanded', 'false');
+  }
+
+  function openList() {
+    listbox.hidden = false;
+    wrap.classList.add('is-open');
+    trigger.setAttribute('aria-expanded', 'true');
+  }
+
+  function renderList() {
+    var selectedValue = nativeSelect.value;
+    listbox.innerHTML = '';
+    getOptions().forEach(function (opt, idx) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'custom-select-option';
+      btn.setAttribute('role', 'option');
+      btn.setAttribute('data-value', opt.value);
+      btn.setAttribute('aria-selected', opt.value === selectedValue ? 'true' : 'false');
+      btn.textContent = opt.textContent;
+      btn.addEventListener('click', function () {
+        nativeSelect.value = opt.value;
+        syncFromNative();
+        closeList();
+        trigger.focus();
+      });
+      listbox.appendChild(btn);
+      if (opt.value === selectedValue && idx === 0) {
+        btn.scrollIntoView({ block: 'nearest' });
+      }
+    });
+  }
+
+  function syncFromNative() {
+    var selected = nativeSelect.options[nativeSelect.selectedIndex];
+    triggerText.textContent = selected ? selected.textContent : '';
+    renderList();
+  }
+
+  function moveSelection(step) {
+    var options = getOptions();
+    var curr = nativeSelect.selectedIndex < 0 ? 0 : nativeSelect.selectedIndex;
+    var next = Math.max(0, Math.min(options.length - 1, curr + step));
+    nativeSelect.selectedIndex = next;
+    syncFromNative();
+  }
+
+  trigger.addEventListener('click', function () {
+    if (listbox.hidden) openList();
+    else closeList();
+  });
+
+  trigger.addEventListener('keydown', function (event) {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      if (listbox.hidden) openList();
+      moveSelection(1);
+      return;
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (listbox.hidden) openList();
+      moveSelection(-1);
+      return;
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      if (listbox.hidden) openList();
+      else closeList();
+      return;
+    }
+    if (event.key === 'Escape') {
+      closeList();
+    }
+  });
+
+  document.addEventListener('click', function (event) {
+    if (!wrap.contains(event.target)) closeList();
+  });
+
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') closeList();
+  });
+
+  syncFromNative();
+})();
+
 (function () {
   var domain = document.getElementById('professor_domain');
   var presetButtons = document.querySelectorAll('[data-topic-preset]');
