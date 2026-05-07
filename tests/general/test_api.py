@@ -13,6 +13,16 @@ def test_home(client: TestClient):
     assert "Resume exam" in r.text
 
 
+def test_home_includes_accessibility_menu_and_focus_highlighter_controls(client: TestClient):
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "Accessibility" in r.text
+    assert "ADHD Focus Highlighter" in r.text
+    assert "data-adhd-focus-toggle" in r.text
+    assert "a11y-focus-overlay" in r.text
+    assert "rgee_a11y_focus_enabled" in r.text
+
+
 def test_start_page_loads(client: TestClient):
     r = client.get("/start")
     assert r.status_code == 200
@@ -415,6 +425,8 @@ def test_performance_log_page(client: TestClient):
     r = client.get("/performance-log")
     assert r.status_code == 200
     assert "Performance log" in r.text
+    assert ">Duration (ms)</th>" in r.text
+    assert 'Duration (ms)</th>' in r.text and 'class="nowrap">Duration (ms)</th>' not in r.text
 
 
 def test_http_log_links_exam_start_to_session(client: TestClient):
