@@ -65,18 +65,29 @@
           <span class="a11y-option-label">Big White Cursor</span>
         </button>
       </div>
+      <div class="a11y-feature-section">
+        <p class="a11y-panel-subtitle">ADHD Focus Highlighter</p>
+        <button type="button" class="a11y-option a11y-focus-option" data-adhd-focus-toggle aria-pressed="false">
+          <span class="a11y-option-label">Enable Focus Highlighter</span>
+        </button>
+      </div>
     </section>
   </div>
+  <div class="a11y-focus-overlay" data-a11y-focus-overlay aria-hidden="true"></div>
   <script>
     (function () {
-      var storageKey = "rgee_a11y_cursor_choice";
+      var cursorStorageKey = "rgee_a11y_cursor_choice";
+      var focusStorageKey = "rgee_a11y_focus_enabled";
       var body = document.body;
+      var docEl = document.documentElement;
       var menuRoot = document.querySelector("[data-a11y-menu]");
       if (!menuRoot) return;
 
       var toggle = menuRoot.querySelector("[data-a11y-toggle]");
       var panel = menuRoot.querySelector("[data-a11y-panel]");
       var optionButtons = Array.prototype.slice.call(menuRoot.querySelectorAll("[data-cursor-choice]"));
+      var focusToggle = menuRoot.querySelector("[data-adhd-focus-toggle]");
+      var focusY = window.innerHeight / 2;
       if (!toggle || !panel || optionButtons.length === 0) return;
 
       function applyCursor(choice) {
@@ -101,7 +112,7 @@
 
       function readStoredChoice() {
         try {
-          return localStorage.getItem(storageKey);
+          return localStorage.getItem(cursorStorageKey);
         } catch (err) {
           return null;
         }
@@ -109,10 +120,44 @@
 
       function storeChoice(choice) {
         try {
-          localStorage.setItem(storageKey, choice || "");
+          localStorage.setItem(cursorStorageKey, choice || "");
         } catch (err) {
           // Ignore storage failures (private mode, disabled storage, etc).
         }
+      }
+
+      function readStoredFocusEnabled() {
+        try {
+          return localStorage.getItem(focusStorageKey) === "1";
+        } catch (err) {
+          return false;
+        }
+      }
+
+      function storeFocusEnabled(enabled) {
+        try {
+          localStorage.setItem(focusStorageKey, enabled ? "1" : "0");
+        } catch (err) {
+          // Ignore storage failures (private mode, disabled storage, etc).
+        }
+      }
+
+      function setFocusY(y) {
+        var viewportHeight = window.innerHeight || 0;
+        var clamped = Math.max(0, Math.min(viewportHeight, y || 0));
+        focusY = clamped;
+        docEl.style.setProperty("--a11y-focus-y", Math.round(clamped) + "px");
+      }
+
+      function setFocusEnabled(enabled) {
+        body.classList.toggle("a11y-focus-enabled", enabled);
+        if (focusToggle) {
+          focusToggle.setAttribute("aria-pressed", enabled ? "true" : "false");
+          focusToggle.querySelector(".a11y-option-label").textContent = enabled
+            ? "Disable Focus Highlighter"
+            : "Enable Focus Highlighter";
+        }
+        storeFocusEnabled(enabled);
       }
 
       toggle.addEventListener("click", function () {
@@ -134,6 +179,29 @@
         });
       });
 
+      if (focusToggle) {
+        focusToggle.addEventListener("click", function () {
+          var enable = !body.classList.contains("a11y-focus-enabled");
+          setFocusEnabled(enable);
+        });
+      }
+
+      document.addEventListener("pointermove", function (event) {
+        if (!body.classList.contains("a11y-focus-enabled")) return;
+        setFocusY(event.clientY);
+      });
+
+      document.addEventListener("focusin", function (event) {
+        if (!body.classList.contains("a11y-focus-enabled")) return;
+        if (!event.target || !event.target.getBoundingClientRect) return;
+        var rect = event.target.getBoundingClientRect();
+        setFocusY(rect.top + rect.height / 2);
+      });
+
+      window.addEventListener("resize", function () {
+        setFocusY(focusY);
+      });
+
       document.addEventListener("click", function (event) {
         if (panel.hidden) return;
         if (!menuRoot.contains(event.target)) closePanel();
@@ -143,7 +211,9 @@
         if (event.key === "Escape") closePanel();
       });
 
+      setFocusY(window.innerHeight / 2);
       applyCursor(readStoredChoice() || "");
+      setFocusEnabled(readStoredFocusEnabled());
     })();
   </script>
 </body>

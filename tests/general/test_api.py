@@ -434,6 +434,9 @@ def test_http_log_links_exam_start_to_session(client: TestClient):
     assert log_page.status_code == 200
     assert f'href="/professor/exam/{session_id}"' in log_page.text
     assert "assoc-test" in log_page.text
+    assert 'class="perf-log-row"' in log_page.text
+    assert 'tabindex="0"' in log_page.text
+    assert "Performance log entry:" in log_page.text
 
 
 def test_client_timing_records_and_returns_204(client: TestClient):
