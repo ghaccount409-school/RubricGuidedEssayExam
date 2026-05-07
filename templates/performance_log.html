@@ -43,7 +43,7 @@
       </thead>
       <tbody>
         {% for row in rows %}
-        <tr>
+        <tr class="perf-log-row" tabindex="0" aria-label="Performance log entry: {% if row.category == 'http' %}HTTP{% elif row.category == 'llm' %}LLM{% elif row.category == 'client' %}Browser{% else %}{{ row.category }}{% endif %}, {{ row.event_name }}, {{ row.duration_ms | round(1) }} milliseconds{% if row.exam_session_id is not none %}, Exam {{ row.exam_session_id }}{% endif %}{% if row.student_id %}, Student {{ row.student_id }}{% endif %}">
           <td class="perf-col-time muted">{{ row.created_at }}</td>
           <td class="perf-col-kind">
             {% if row.category == 'http' %}

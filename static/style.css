@@ -984,6 +984,21 @@ button.btn-primary {
   line-height: 1.4;
 }
 
+/* Keyboard: each log row is a tab stop; scroll container can align focused rows */
+.perf-log-table tbody tr.perf-log-row {
+  scroll-margin-block: 0.75rem;
+  scroll-margin-inline: 0.5rem;
+}
+.perf-log-table tbody tr.perf-log-row:focus {
+  outline: none;
+}
+.perf-log-table tbody tr.perf-log-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
 .perf-log-panel .meta-cell {
   max-width: none;
 }
