@@ -618,12 +618,30 @@ textarea {
   border-right: 5px solid transparent;
   border-top: 6px solid var(--muted);
   pointer-events: none;
+  transition: transform 0.15s ease;
+}
+
+/* Flip only while the native menu is actually open. */
+.select-wrap:has(select:open)::after {
+  transform: translateY(-50%) rotate(180deg);
 }
 
 select {
   appearance: none;
   padding-right: 2.25rem;
   cursor: pointer;
+}
+
+/* Improve readability for opened native dropdown lists across current/future selects. */
+select option {
+  background: #111b2f;
+  color: #eef2f8;
+}
+
+select option:checked {
+  background: #1e2d45;
+  color: #ffffff;
+  font-weight: 600;
 }
 
 .form-actions {
