@@ -427,6 +427,7 @@ a:hover {
   letter-spacing: -0.03em;
   margin: 0 0 0.65rem;
   line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 .hero-lead {
@@ -434,6 +435,7 @@ a:hover {
   color: var(--muted);
   max-width: 52ch;
   margin: 0;
+  overflow-wrap: anywhere;
 }
 .hero-lead strong {
   color: var(--text);
@@ -890,6 +892,9 @@ button.btn-primary {
   font-weight: 600;
   cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.25;
 }
 
 .mode-pill:hover:not(:disabled) {
@@ -1178,14 +1183,16 @@ button.btn-primary {
 }
 
 .perf-log-scroll.table-scroll {
-  overflow-x: visible;
+  overflow-x: auto;
   overflow-y: visible;
   max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
 }
 
 .perf-log-table.data-table {
   table-layout: fixed;
-  width: 100%;
+  width: max(100%, 74rem);
 }
 
 .perf-log-table col.perf-col-time {
@@ -1216,6 +1223,13 @@ button.btn-primary {
   vertical-align: top;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+.perf-log-table th {
+  white-space: normal;
+  line-height: 1.28;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .perf-log-table td.perf-col-ms,
@@ -1562,5 +1576,34 @@ th {
     flex: 1;
     text-align: center;
     justify-content: center;
+  }
+
+  .hero-title {
+    font-size: clamp(1.35rem, 7vw, 1.75rem);
+    line-height: 1.25;
+  }
+
+  .hero-lead {
+    font-size: 0.96rem;
+    line-height: 1.5;
+  }
+
+  .panel {
+    padding: 1.05rem 0.95rem;
+  }
+
+  .panel-title,
+  .hint,
+  .a11y-option-label {
+    overflow-wrap: anywhere;
+  }
+
+  .form-actions .btn {
+    width: 100%;
+  }
+
+  .exam-code-value {
+    letter-spacing: 0.09em;
+    word-break: break-all;
   }
 }
