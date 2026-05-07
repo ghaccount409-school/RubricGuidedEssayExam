@@ -1,0 +1,25 @@
+{
+  "updated_at": "2026-05-07T01:24:17Z",
+  "pytest_exit_codes": {
+    "general": 0,
+    "security": 0
+  },
+  "all_passed": true,
+  "general": {
+    "passed": 41,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "deselected": 0,
+    "total": 41
+  },
+  "security": {
+    "passed": 4,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "deselected": 0,
+    "total": 4
+  },
+  "workflow_run_url": "https://github.com/ghaccount409-school/RubricGuidedEssayExam/actions/runs/25470610293"
+}
