@@ -1,5 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Question {{ question_number }}{% endblock %}
+{% block head_extra %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
+{% endblock %}
 {% block body %}
 <section class="exam-code-banner" aria-label="Exam ID">
   <p class="exam-code-label">Exam ID</p>
@@ -107,9 +110,29 @@
 
 <form class="panel form-card" method="post" action="/exam/{{ session.id }}/answer" id="answer-form">
   <h2 class="panel-title">Your answer</h2>
-  <div class="field">
-    <label for="answer">Essay response <span class="req">*</span></label>
-    <textarea id="answer" name="answer" required rows="12" placeholder="Write your response here."></textarea>
+  <p class="muted math-hint">Use <code>$...$</code> for inline math and <code>$$...$$</code> (or <code>\( ... \)</code> / <code>\[ ... \]</code>) for display math. Build LaTeX in the <strong>Math tools</strong> panel, then copy or insert into your response. Next to math delimiters, write a dollar sign as <code>\$</code> so it is not parsed as math.</p>
+  <div class="answer-math-layout">
+    <div class="answer-math-main">
+      <div class="field">
+        <label for="answer">Essay response <span class="req">*</span></label>
+        <textarea id="answer" name="answer" required rows="12" placeholder="Write your response here. You can paste LaTeX from Math tools."></textarea>
+      </div>
+      <p class="label-over">Preview (LaTeX / KaTeX)</p>
+      <div id="answer-katex-preview" class="katex-preview-box" aria-live="polite" aria-label="Rendered preview of your answer"></div>
+    </div>
+    <aside class="latex-side-panel" aria-labelledby="latex-tools-title">
+      <h3 id="latex-tools-title" class="panel-subtitle">Math tools</h3>
+      <p class="muted small">Type LaTeX here or use the buttons. Copy to the clipboard or insert at the cursor in your essay box.</p>
+      <label class="visually-hidden" for="latex-builder-input">LaTeX formula workspace</label>
+      <textarea id="latex-builder-input" class="latex-builder-input" rows="7" placeholder="Example: The energy is $E = mc^2$ or $$\int_0^1 x\,dx = \frac{1}{2}$$"></textarea>
+      <p class="label-over">Builder preview</p>
+      <div id="latex-builder-preview" class="katex-preview-box katex-preview-box--compact" aria-live="polite"></div>
+      <div id="latex-toolbar-root" class="latex-toolbar" role="toolbar" aria-label="Insert LaTeX fragments"></div>
+      <div class="latex-side-actions">
+        <button type="button" class="btn btn-secondary" id="latex-copy-btn">Copy LaTeX</button>
+        <button type="button" class="btn btn-primary" id="latex-insert-btn">Insert into answer</button>
+      </div>
+    </aside>
   </div>
   <div class="form-actions">
     {% if question_number < total_planned %}
@@ -161,6 +184,9 @@
 })();
 </script>
 {% endif %}
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
+<script src="/static/rgee-math-panel.js"></script>
 <script>
 (function () {
   var answer = document.getElementById('answer');
