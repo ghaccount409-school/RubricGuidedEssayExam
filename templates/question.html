@@ -108,29 +108,36 @@
   </div>
 </section>
 
-<form class="panel form-card" method="post" action="/exam/{{ session.id }}/answer" id="answer-form">
+<form class="panel form-card answer-math-form" method="post" action="/exam/{{ session.id }}/answer" id="answer-form">
   <h2 class="panel-title">Your answer</h2>
-  <p class="muted math-hint">Use <code>$...$</code> for inline math and <code>$$...$$</code> (or <code>\( ... \)</code> / <code>\[ ... \]</code>) for display math. Build LaTeX in the <strong>Math tools</strong> panel, then copy or insert into your response. Next to math delimiters, write a dollar sign as <code>\$</code> so it is not parsed as math.</p>
+  <p class="muted math-hint">Use <code>$...$</code> for inline math and <code>$$...$$</code> (or <code>\( ... \)</code> / <code>\[ ... \]</code>) for display math. The <strong>Essay preview</strong> below shows your text with KaTeX where delimited. Use <strong>Math tools</strong> and <strong>Builder preview</strong> to assemble expressions, then <strong>Insert into answer</strong> (bare LaTeX is wrapped in <code>$...$</code> or <code>$$...$$</code> so the essay preview renders it). In the builder, type LaTeX in the overlay on top of the live KaTeX render. Next to math delimiters, use <code>\$</code> for a literal dollar sign.</p>
   <div class="answer-math-layout">
     <div class="answer-math-main">
       <div class="field">
         <label for="answer">Essay response <span class="req">*</span></label>
         <textarea id="answer" name="answer" required rows="12" placeholder="Write your response here. You can paste LaTeX from Math tools."></textarea>
       </div>
-      <p class="label-over">Preview (LaTeX / KaTeX)</p>
-      <div id="answer-katex-preview" class="katex-preview-box" aria-live="polite" aria-label="Rendered preview of your answer"></div>
+      <p class="label-over" id="essay-katex-preview-label">Essay preview (with math)</p>
+      <div id="answer-katex-preview" class="katex-preview-box katex-preview-box--essay" aria-live="polite" aria-labelledby="essay-katex-preview-label"></div>
     </div>
-    <aside class="latex-side-panel" aria-labelledby="latex-tools-title">
-      <h3 id="latex-tools-title" class="panel-subtitle">Math tools</h3>
-      <p class="muted small">Type LaTeX here or use the buttons. Copy to the clipboard or insert at the cursor in your essay box.</p>
-      <label class="visually-hidden" for="latex-builder-input">LaTeX formula workspace</label>
-      <textarea id="latex-builder-input" class="latex-builder-input" rows="7" placeholder="Example: The energy is $E = mc^2$ or $$\int_0^1 x\,dx = \frac{1}{2}$$"></textarea>
-      <p class="label-over">Builder preview</p>
-      <div id="latex-builder-preview" class="katex-preview-box katex-preview-box--compact" aria-live="polite"></div>
-      <div id="latex-toolbar-root" class="latex-toolbar" role="toolbar" aria-label="Insert LaTeX fragments"></div>
-      <div class="latex-side-actions">
-        <button type="button" class="btn btn-secondary" id="latex-copy-btn">Copy LaTeX</button>
-        <button type="button" class="btn btn-primary" id="latex-insert-btn">Insert into answer</button>
+    <aside class="latex-side-panel" aria-label="Math tools and builder">
+      <h3 id="math-tools-panel-title" class="panel-subtitle">Math tools</h3>
+      <p class="muted small">Click a math button once to <strong>turn on</strong> the builder (button stays highlighted); click it again to <strong>turn off</strong>. Changing symbol pages turns the builder off. While off, the preview is dimmed and not editable.</p>
+      <div id="latex-toolbar-root" class="latex-toolbar" role="toolbar" aria-label="Math symbols and layouts"></div>
+
+      <h3 id="builder-panel-title" class="panel-subtitle math-sidebar-builder-title">Builder preview</h3>
+      <p class="muted small">The builder is <strong>only editable</strong> while a math tool button below is highlighted (toggle the same button off to dismiss).</p>
+      <div id="builder-preview-panel">
+        <div id="math-visual-root" class="math-visual-root math-visual-root--embedded"></div>
+        <div class="latex-builder-preview-stack" id="latex-builder-preview-stack" role="region" aria-label="Formula preview and LaTeX editor" aria-live="polite">
+          <div id="latex-builder-preview" class="katex-preview-box katex-preview-box--builder katex-preview-layer"></div>
+          <label class="visually-hidden" for="latex-builder-input">LaTeX editor (typed over live preview)</label>
+          <textarea id="latex-builder-input" class="latex-builder-preview-overlay" rows="3" spellcheck="false" autocomplete="off" placeholder="LaTeX (synced from boxes when using templates)"></textarea>
+        </div>
+        <div class="latex-side-actions">
+          <button type="button" class="btn btn-secondary" id="latex-copy-btn">Copy LaTeX</button>
+          <button type="button" class="btn btn-primary" id="latex-insert-btn">Insert into answer</button>
+        </div>
       </div>
     </aside>
   </div>
